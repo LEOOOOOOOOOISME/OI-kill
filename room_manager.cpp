@@ -242,6 +242,13 @@ bool RoomManager::addPlayer(int id, const std::string& username,
 
     room->players[slot].name = username;
     if (info.host.empty()) info.host = username;
+    // 满员后自动开始对局 (公平重开: 所有人重新发4张牌, 从第1轮开始)
+    int joined = 0;
+    for (auto& p : room->players) if (p.name != "等待加入") joined++;
+    if (joined >= info.playerLimit && !info.started) {
+        info.started = true;
+        room->resetForStart();
+    }
     return true;
 }
 
@@ -250,7 +257,39 @@ bool RoomManager::removePlayer(int id, const std::string& username) {
     if (!rooms.count(id)) return false;
     std::shared_ptr<Room> room = rooms[id];
     for (auto& p : room->players) {
-        if (p.name == username) { p.name = "等待加入"; return true; }
+        if (p.name == username) {
+            // 重置槽位为初始状态, 避免后续加入的玩家继承上一名玩家的手牌/装备
+            // (修复 bug#7 相关的"发牌异常": 离场后重新加入会看到别人的牌)
+            p.name = "等待加入";
+            for (auto& eq : p.equip) room->discard.push_back(eq);
+            p.equip.clear();
+            p.weapon = p.armor = p.mount_off = p.mount_def = nullptr;
+            p.hand.clear();
+            p.hp = p.max_hp;
+            p.alive = true;
+            p.depression = (p.identity == "摸鱼怪") ? 3 : 0;
+            p.awakened = false;
+            p.noDamageRounds = 0;
+            p.damageDealtThisTurn = 0;
+            p.skipPlayRounds = 0;
+            p.retireUsed = false;
+            p.preventDamageCount = 0;
+            p.usedMentor = false;
+            p.liveViewCount = 0;
+            p.usedSealThisGame = false;
+            p.evoCandidates.clear();
+            p.evoTotal = 0;
+            p.evoTurn = 0;
+            p.acUsedThisTurn = 0;
+            p.acLimit = 1;
+            p.usedUndefeatedThisTurn = false;
+            p.usedKangThisTurn = false;
+            p.usedSkillsThisTurn.clear();
+            p.bossDmgBoost = false;
+            // 重新发4张初始手牌
+            for (int i = 0; i < 4; ++i) p.hand.push_back(room->drawCard());
+            return true;
+        }
     }
     return false;
 }

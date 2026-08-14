@@ -1,4 +1,4 @@
-﻿#include "game_engine.h"
+#include "game_engine.h"
 #include <algorithm>
 #include <chrono>
 
@@ -124,10 +124,21 @@ int Room::dealDamage(Player& source, Player& target, int dmg, bool isAttack, boo
         if (activeEvent == "毒瘤评测机") dmg = std::max(0, dmg - 1);
         else if (activeEvent == "暴力评测机") dmg += 1;
     }
+    // 判定花色辅助: 手动测评可强制下一次判定为红/黑
+    auto effectiveSuit = [&](Card& judge) -> std::string {
+        if (!forcedJudgeColor.empty()) {
+            std::string s = (forcedJudgeColor == "red") ? "heart" : "spade";
+            addLog("【手动测评】判定花色强制为" + std::string(s=="heart"?"红色":"黑色"));
+            forcedJudgeColor.clear();
+            return s;
+        }
+        return judge.suit;
+    };
     // 退役选手回忆
     if (target.profession == "退役选手") {
         Card judge = drawCard();
-        if (judge.suit == "spade") {
+        std::string jSuit = effectiveSuit(judge);
+        if (jSuit == "spade") {
             dmg = std::max(0, dmg - 1);
             target.preventDamageCount++;
             addLog(target.name + "【回忆】判定♠，减伤1点");
@@ -142,7 +153,8 @@ int Room::dealDamage(Player& source, Player& target, int dmg, bool isAttack, boo
     // 记忆化搜索防具
     if (target.armor && target.armor->name == "记忆化搜索") {
         Card judge = drawCard();
-        if (judge.suit == "heart") {
+        std::string jSuit = effectiveSuit(judge);
+        if (jSuit == "heart") {
             dmg = std::max(0, dmg - 1);
             addLog(target.name + "【记忆化搜索】判定♥减伤");
         }
@@ -229,7 +241,19 @@ void Room::checkVictory() {
     else if (rebelCount == 0 && spyCount == 0 && (auCount>0||agCount>0)) {
         gameOver = true; winner = "忠臣阵营获胜！";
     }
-    if (gameOver) { phase = GAME_OVER; addLog("游戏结束：" + winner); }
+    if (gameOver) {
+        phase = GAME_OVER;
+        addLog("游戏结束：" + winner);
+        // 本局囧闻
+        int awakens = 0;
+        for (auto& p : players) if (p.awakened) awakens++;
+        std::string jiwen = "【本局囧闻】本局共触发 " + std::to_string(awakens) + " 次觉醒";
+        if (awakens >= 3) jiwen += "，觉醒遍地开花，考场变修罗场";
+        else if (awakens > 0) jiwen += "，有人悄悄进化了";
+        else jiwen += "，无人觉醒，咸鱼本鱼";
+        jiwen += " · 本局事件：" + activeEvent;
+        addLog(jiwen);
+    }
 }
 
 void Room::clearPending() { pending.reset(); }
@@ -263,9 +287,16 @@ void Room::nextPhase() {
     case ROUND_START: {
         Player& p = getPlayer(currentTurn);
         p.evoCandidates.clear();
-        if (p.depression > 0 && (p.hp < p.max_hp || p.hand.size() < 3)) {
-            if (p.hp < p.max_hp) { p.hp = std::min(p.max_hp, p.hp+1); addLog(p.name + " 使用颓废回复1体力"); p.depression--; }
-            else { for(int i=0;i<2;++i) p.hand.push_back(drawCard()); addLog(p.name + " 使用颓废摸2牌"); p.depression--; }
+        // 全员卡常(毒瘤觉醒): 效果持续到毒瘤出题人自己的下一个回合开始
+        if (!banWABy.empty() && p.name == banWABy) {
+            banWANextTurn = false; banWABy.clear();
+            addLog("全员卡常效果结束");
+        }
+        // 摸鱼怪·颓废: 回合开始时询问玩家选择 (回复1体力 / 摸2牌 / 不使用)
+        if (p.depression > 0 && !p.depressionAsked) {
+            p.depressionAsked = true;
+            startResponse("WAIT_DEPRESSION", p.id, {}, {});
+            return; // 等待玩家响应后再继续回合
         }
         if (p.profession == "蒟蒻" && p.hand.empty()) { p.hand.push_back(drawCard()); addLog(p.name + "【抱大腿】空手摸1"); }
         if (p.profession == "退役选手" && p.hp > 1) { p.hp--; for(int i=0;i<2;++i) p.hand.push_back(drawCard()); addLog(p.name + "【挣扎】扣1血摸2"); }
@@ -333,6 +364,9 @@ void Room::nextPhase() {
         for (auto& pl : players) {
             pl.usedSkillsThisTurn.clear(); pl.evoTurn = 0; pl.acUsedThisTurn = 0;
             pl.acLimit = 1; pl.usedUndefeatedThisTurn = false; pl.usedKangThisTurn = false;
+            pl.usedAskThisTurn = false; pl.usedSkirtThisTurn = false;
+            pl.akioiActive = false; pl.yanyaCountThisTurn = 0; pl.akAllActive = false;
+            pl.examThisTurn = false; pl.depressionAsked = false;
         }
         phase = ROUND_START; nextPhase(); break;
     }
@@ -366,55 +400,110 @@ bool Room::useCard(int pid, int cardIdx, std::vector<int> targets, json& result)
         equipCard(player, card); result["success"] = true; return true;
     }
 
+    // 被动技能: 萌新·问问题 / 女装大佬·女装 (成为卡牌唯一目标时摸1牌, 每回合限一次)
+    if (targets.size() == 1 && targets[0] != pid) {
+        Player& tg = getPlayer(targets[0]);
+        if (tg.profession == "萌新" && !tg.usedAskThisTurn && !gameOver) {
+            tg.usedAskThisTurn = true;
+            tg.hand.push_back(drawCard());
+            addLog(tg.name + "【问问题】成为卡牌唯一目标，摸1牌");
+        }
+        if (tg.profession == "女装大佬" && !tg.usedSkirtThisTurn && card.type == FUNC && !gameOver) {
+            tg.usedSkirtThisTurn = true;
+            tg.hand.push_back(drawCard());
+            addLog(tg.name + "【女装】成为锦囊目标，摸1牌");
+        }
+    }
+
     // 内部攻击函数（AC代码与神犇碾压）
     auto performAcAttack = [&](Card& usedCard, bool isVirtual = false) -> bool {
-        if (targets.size() != 1) return false;
-        int tgt = targets[0];
-        if (!canAttack(pid, tgt)) return false;
-        if (player.acUsedThisTurn >= player.acLimit) return false;
-        bool forceHit = false;
+        if (targets.empty()) return false;
+        // 提前缓存引用指向的值, 避免 discardFromHand 后悬挂引用
+        int usedCardId = usedCard.id;
+        bool usedCardEvolved = usedCard.evolved;
+        // 神犇觉醒·AK全场: 一张AC可指定任意数量目标(万箭齐发, 无视WA)
+        bool akAll = player.akAllActive && targets.size() > 1;
+        // 次数限制 (慈善评测机: 出牌阶段AC无次数限制)
+        if (!akAll && player.acUsedThisTurn >= player.acLimit && activeEvent != "慈善评测机") return false;
+        bool ignoreWA = (activeEvent == "毒瘤评测机"); // 毒瘤评测机: AC无视WA
+        // 毒瘤出题人·卡常(每回合限一次, 判定♠才不可被闪)
+        bool kachangForce = false;
         if (player.profession == "毒瘤出题人" && !player.usedKangThisTurn) {
             player.usedKangThisTurn = true;
             Card judge = drawCard();
-            if (judge.suit == "spade") { forceHit = true; addLog(player.name + "【卡常】判定♠，此杀不可被闪"); }
-        }
-        Player& target = getPlayer(tgt);
-        std::vector<int> waCards;
-        if (!forceHit) {
-            for (size_t i=0; i<target.hand.size(); ++i) if (target.hand[i].name == "WA") waCards.push_back(i);
-            if (target.armor && target.armor->name == "并查集") {
-                for (size_t i=0; i<target.hand.size(); ++i) if (target.hand[i].name != "WA") waCards.push_back(i);
+            std::string jSuit = judge.suit;
+            if (!forcedJudgeColor.empty()) { jSuit = (forcedJudgeColor=="red")?"heart":"spade"; forcedJudgeColor.clear(); }
+            if (jSuit == "spade") {
+                kachangForce = true;
+                player.kachangSuccess++;
+                addLog(player.name + "【卡常】判定♠，此杀不可被闪 (成功" + std::to_string(player.kachangSuccess) + "次)");
+                // 觉醒·全员卡常: 卡常成功2次后, 其他角色下回合不能用WA
+                if (player.kachangSuccess >= 2 && !player.awakened) {
+                    player.awakened = true;
+                    banWANextTurn = true; banWABy = player.name;
+                    addLog("⚡ " + player.name + " 觉醒：全员卡常！你的常数，我来守护！其他角色下回合不能使用WA");
+                }
+            } else {
+                addLog(player.name + "【卡常】判定" + jSuit + "，未能卡常");
             }
         }
-        if (!waCards.empty()) {
-            json ctx = {{"attacker", pid}, {"card_id", usedCard.id}, {"virtual", isVirtual}};
-            startResponse("response_wa", tgt, waCards, ctx);
-            result["pending"] = "wait_response";
-            return true;
-        }
-        // 直接命中
-        if (!isVirtual) discardFromHand(player, cardIdx);
-        int dmg = 1;
-        if (player.bossDmgBoost) dmg += 1;
-        dealDamage(player, target, dmg, true);
-        player.acUsedThisTurn++;
-        // 树状数组看牌
-        if (player.weapon && player.weapon->name == "树状数组") {
-            json view; for (auto& c : target.hand) view.push_back(c.symbol());
-            result["view_hand"] = {{"target", tgt}, {"cards", view}};
-        }
-        if (dmg > 0 && player.evoTotal < 3 && player.evoTurn < 1 && !usedCard.evolved) {
-            player.evoCandidates.push_back(usedCard.id);
-        }
-        // 莫队算法额外目标（简化：自动选择另一个可攻击目标）
-        if (player.weapon && player.weapon->name == "莫队算法") {
-            for (auto& p : players) {
-                if (p.alive && p.id != tgt && canAttack(pid, p.id)) {
-                    addLog(player.name + "【莫队算法】额外攻击 " + p.name);
-                    dealDamage(player, p, 1, true);
-                    break;
+        int baseDmg = 1;
+        if (player.bossDmgBoost) baseDmg += 1;  // 传奇Au觉醒·传奇不朽: 本局剩余伤害+1
+        if (player.akioiActive) baseDmg += 1;   // 神犇·AKIOI: 这些杀伤害+1
+        bool discarded = false;
+        for (size_t ti = 0; ti < targets.size(); ++ti) {
+            int tgt = targets[ti];
+            if (tgt == pid || !isAlive(tgt)) continue;
+            if (!akAll && !canAttack(pid, tgt)) continue;
+            Player& target = getPlayer(tgt);
+            int dmg = baseDmg;
+            // 随机评测机: 成为AC目标时判定, 红桃=视为WA, 黑桃=伤害+1
+            if (activeEvent == "随机评测机") {
+                Card judge = drawCard();
+                std::string jSuit = judge.suit;
+                if (!forcedJudgeColor.empty()) { jSuit=(forcedJudgeColor=="red")?"heart":"spade"; forcedJudgeColor.clear(); }
+                if (jSuit == "heart") { addLog(target.name + "【随机评测机】判定♥，视为使用了WA，闪避成功"); continue; }
+                if (jSuit == "spade") { dmg += 1; addLog(target.name + "【随机评测机】判定♠，伤害+1"); }
+            }
+            std::vector<int> waCards;
+            if (!kachangForce && !ignoreWA && !akAll) {
+                for (size_t i=0; i<target.hand.size(); ++i) if (target.hand[i].name == "WA") waCards.push_back(i);
+                if (target.armor && target.armor->name == "并查集") {
+                    for (size_t i=0; i<target.hand.size(); ++i) if (target.hand[i].name != "WA") waCards.push_back(i);
                 }
             }
+            if (!waCards.empty()) {
+                json ctx = {{"attacker", pid}, {"card_id", usedCardId}, {"virtual", isVirtual}};
+                startResponse("response_wa", tgt, waCards, ctx);
+                result["pending"] = "wait_response";
+                return true; // 等待目标响应后由 processResponse 继续
+            }
+            // 直接命中
+            if (!isVirtual && !discarded) { discardFromHand(player, cardIdx); discarded = true; }
+            dealDamage(player, target, dmg, true);
+            player.acUsedThisTurn++;
+            // 树状数组看牌
+            if (player.weapon && player.weapon->name == "树状数组") {
+                json view; for (auto& c : target.hand) view.push_back(c.symbol());
+                result["view_hand"] = {{"target", tgt}, {"cards", view}};
+            }
+            if (dmg > 0 && player.evoTotal < 3 && player.evoTurn < 1 && !usedCardEvolved) {
+                player.evoCandidates.push_back(usedCardId);
+            }
+            // 莫队算法额外目标（简化：自动选择另一个可攻击目标）
+            if (player.weapon && player.weapon->name == "莫队算法") {
+                for (auto& p : players) {
+                    if (p.alive && p.id != tgt && canAttack(pid, p.id)) {
+                        addLog(player.name + "【莫队算法】额外攻击 " + p.name);
+                        dealDamage(player, p, 1, true);
+                        break;
+                    }
+                }
+            }
+        }
+        if (akAll) {
+            player.akAllActive = false;
+            addLog("⚡ " + player.name + "【AK全场】万箭齐发！我不是在虐菜，是在出数据。");
         }
         result["success"] = true;
         return true;
@@ -424,7 +513,14 @@ bool Room::useCard(int pid, int cardIdx, std::vector<int> targets, json& result)
     if (card.name == "AC代码") return performAcAttack(card, false);
     // 神犇碾压
     if (player.profession == "神犇" && card.isBlack() && card.name != "AC代码") {
-        addLog(player.name + "【碾压】将 " + card.symbol() + " 当作AC使用");
+        player.yanyaCountThisTurn++;
+        addLog(player.name + "【碾压】将 " + card.symbol() + " 当作AC使用 (本回合" + std::to_string(player.yanyaCountThisTurn) + "张)");
+        // 觉醒·AK全场: 同一回合碾压打出2张以上AC
+        if (player.yanyaCountThisTurn >= 2 && !player.awakened) {
+            player.awakened = true;
+            player.akAllActive = true;
+            addLog("⚡ " + player.name + " 觉醒：AK全场！本回合下一张AC可指定任意数量目标");
+        }
         return performAcAttack(card, true);
     }
     // RE
@@ -502,6 +598,12 @@ bool Room::useCard(int pid, int cardIdx, std::vector<int> targets, json& result)
         discardFromHand(player, cardIdx);
         player.usedSealThisGame = true;
         for (int t : targets) if (isAlive(t)) dealDamage(player, getPlayer(t), 1, false, true);
+        // 觉醒·传奇不朽: 首次使用封神后, 本局剩余时间所有伤害+1
+        if (!player.awakened) {
+            player.awakened = true;
+            player.bossDmgBoost = true;
+            addLog("⚡ " + player.name + " 觉醒：传奇不朽！本局剩余时间造成的所有伤害+1");
+        }
         addLog(player.name + "【封神】造成伤害");
         result["success"] = true; return true;
     }
@@ -534,6 +636,136 @@ bool Room::useCard(int pid, int cardIdx, std::vector<int> targets, json& result)
         discardFromHand(player, cardIdx);
         getPlayer(targets[0]).skipPlayRounds = 1;
         addLog(getPlayer(targets[0]).name + " 下回合跳过出牌");
+        result["success"] = true; return true;
+    }
+    // 爆零: 弃置目标一张手牌
+    if (card.name == "爆零") {
+        if (targets.size()!=1) return false;
+        Player& target = getPlayer(targets[0]);
+        discardFromHand(player, cardIdx);
+        if (!target.hand.empty()) {
+            int idx = randInt(0, (int)target.hand.size()-1);
+            discardFromHand(target, idx);
+            addLog(target.name + " 被爆零，弃置一张手牌");
+        } else { addLog(target.name + " 无手牌可弃，爆零落空"); }
+        result["success"] = true; return true;
+    }
+    // 抄袭代码: 获得目标一张装备牌(无装备则偷手牌); 进化后=暴力抄袭(偷任意一张)
+    if (card.name == "抄袭代码") {
+        if (targets.size()!=1) return false;
+        Player& target = getPlayer(targets[0]);
+        bool evolved = card.evolved;
+        discardFromHand(player, cardIdx);
+        bool stole = false;
+        if (!target.hand.empty() && (evolved || target.equip.empty())) {
+            int idx = randInt(0, (int)target.hand.size()-1);
+            player.hand.push_back(target.hand[idx]);
+            addLog(player.name + (evolved?"【暴力抄袭】":"【抄袭代码】") + "获得 " + target.name + " 的手牌 " + target.hand[idx].symbol());
+            target.hand.erase(target.hand.begin()+idx);
+            stole = true;
+        } else if (!target.equip.empty()) {
+            int idx = randInt(0, (int)target.equip.size()-1);
+            Card eq = target.equip[idx];
+            if (target.weapon && target.weapon->id == eq.id) target.weapon = nullptr;
+            if (target.armor && target.armor->id == eq.id) target.armor = nullptr;
+            if (target.mount_off && target.mount_off->id == eq.id) target.mount_off = nullptr;
+            if (target.mount_def && target.mount_def->id == eq.id) target.mount_def = nullptr;
+            target.equip.erase(target.equip.begin()+idx);
+            player.equip.push_back(eq);
+            Card& eqRef = player.equip.back();
+            if (eqRef.type==WEAPON) player.weapon=&eqRef;
+            else if (eqRef.type==ARMOR) player.armor=&eqRef;
+            else if (eqRef.type==MOUNT_OFF) player.mount_off=&eqRef;
+            else if (eqRef.type==MOUNT_DEF) player.mount_def=&eqRef;
+            addLog(player.name + "【抄袭代码】获得 " + target.name + " 的装备 " + eq.name);
+            stole = true;
+        } else { addLog(player.name + " 抄袭代码落空，目标无牌可偷"); }
+        if (stole && player.evoTotal<3 && player.evoTurn<1 && !evolved) player.evoCandidates.push_back(card.id);
+        result["success"] = true; return true;
+    }
+    // 重构: 从弃牌堆获得一张牌
+    if (card.name == "重构") {
+        discardFromHand(player, cardIdx);
+        if (!discard.empty()) {
+            int idx = randInt(0, (int)discard.size()-1);
+            Card got = discard[idx];
+            discard.erase(discard.begin()+idx);
+            player.hand.push_back(got);
+            addLog(player.name + "【重构】从弃牌堆获得 " + got.symbol());
+            if (player.evoTotal<3 && player.evoTurn<1) player.evoCandidates.push_back(card.id);
+        } else { addLog("弃牌堆为空，重构落空"); }
+        result["success"] = true; return true;
+    }
+    // 模拟赛 (金牌教练专属): 目标必须打出AC否则受1伤 (逐个询问)
+    if (card.name == "模拟赛" && player.profession == "金牌教练" && !player.examThisTurn) {
+        if (targets.empty() || targets.size()>3) return false;
+        discardFromHand(player, cardIdx);
+        player.examThisTurn = true;
+        std::vector<int> valid;
+        for (int t : targets) if (isAlive(t) && t != pid) valid.push_back(t);
+        if (valid.empty()) { result["success"] = true; return true; }
+        json ctx = {{"exam_targets", valid}, {"exam_idx", 0}, {"owner", pid}};
+        Player& first = getPlayer(valid[0]);
+        std::vector<int> acIdxs;
+        for (size_t i=0;i<first.hand.size();++i) if (first.hand[i].name=="AC代码") acIdxs.push_back(i);
+        startResponse("WAIT_EXAM_AC", valid[0], acIdxs, ctx);
+        result["pending"] = "exam_ac";
+        return true;
+    }
+    // 女装直播 (女装大佬专属): 所有角色摸1, 其他角色弃1, 你获得其中一张
+    if (card.name == "女装直播" && player.profession == "女装大佬") {
+        discardFromHand(player, cardIdx);
+        for (auto& p : players) if (p.alive) p.hand.push_back(drawCard());
+        std::vector<Card> dropped;
+        for (auto& p : players) {
+            if (p.alive && p.id != pid && !p.hand.empty()) {
+                int di = randInt(0, (int)p.hand.size()-1);
+                dropped.push_back(p.hand[di]);
+                addLog(p.name + " 弃置 " + p.hand[di].symbol());
+                p.hand.erase(p.hand.begin()+di);
+            }
+        }
+        if (!dropped.empty()) {
+            Card got = dropped[randInt(0, (int)dropped.size()-1)];
+            player.hand.push_back(got);
+            addLog(player.name + "【女装直播】获得 " + got.symbol());
+        }
+        addLog("📺 " + player.name + " 直播女装，在线发牌！");
+        result["success"] = true; return true;
+    }
+    // 手动测评: 弃1牌, 选择下一次判定花色为红/黑
+    if (card.name == "手动测评") {
+        discardFromHand(player, cardIdx);
+        startResponse("WAIT_JUDGE_COLOR", pid, {}, {});
+        result["pending"] = "judge_color";
+        return true;
+    }
+    // 评测机崩溃 (彩蛋): 弃牌堆AC移回牌堆重洗, 所有玩家失去1体力
+    if (card.name == "评测机崩溃") {
+        discardFromHand(player, cardIdx);
+        int moved = 0;
+        for (size_t i = discard.size(); i-- > 0; ) {
+            if (discard[i].name == "AC代码") { deck.push_back(discard[i]); discard.erase(discard.begin()+i); moved++; }
+        }
+        shuffleDeck();
+        addLog("💥 Ctrl+C 都救不了你们！评测机崩溃，" + std::to_string(moved) + "张AC被移回牌堆");
+        for (auto& p : players) if (p.alive) dealDamage(player, p, 1, false, true);
+        result["success"] = true; return true;
+    }
+    // 女装求AC (彩蛋): 目标必须给你一张手牌, 否则你回复1体力
+    if (card.name == "女装求AC") {
+        if (targets.size()!=1) return false;
+        Player& target = getPlayer(targets[0]);
+        discardFromHand(player, cardIdx);
+        if (!target.hand.empty()) {
+            int idx = randInt(0, (int)target.hand.size()-1);
+            player.hand.push_back(target.hand[idx]);
+            addLog(target.name + " 被女装求AC，给了 " + player.name + " 一张手牌 " + target.hand[idx].symbol());
+            target.hand.erase(target.hand.begin()+idx);
+        } else {
+            player.hp = std::min(player.max_hp, player.hp+1);
+            addLog(target.name + " 无手牌可给，" + player.name + " 回复1体力");
+        }
         result["success"] = true; return true;
     }
     // 彩蛋牌
@@ -583,6 +815,135 @@ bool Room::useCard(int pid, int cardIdx, std::vector<int> targets, json& result)
     return false;
 }
 
+// 房间满员时调用: 回收所有牌重新洗入牌堆, 重置玩家状态并重新发4张初始手牌,
+// 对局从第1轮正式开始 (修复: 未满员前不允许出牌, 满员后才开始公平对局)
+void Room::resetForStart() {
+    // 回收手牌/装备/弃牌堆回牌堆
+    for (auto& p : players) {
+        for (auto& c : p.hand) deck.push_back(c);
+        p.hand.clear();
+        for (auto& eq : p.equip) deck.push_back(eq);
+        p.equip.clear();
+    }
+    for (auto& c : discard) deck.push_back(c);
+    discard.clear();
+    shuffleDeck();
+    // 重置所有玩家状态并重新发4张
+    for (auto& p : players) {
+        p.weapon = p.armor = p.mount_off = p.mount_def = nullptr;
+        p.hp = p.max_hp;
+        p.alive = true;
+        p.depression = (p.identity == "摸鱼怪") ? 3 : 0;
+        p.awakened = false;
+        p.noDamageRounds = 0;
+        p.damageDealtThisTurn = 0;
+        p.skipPlayRounds = 0;
+        p.retireUsed = false;
+        p.preventDamageCount = 0;
+        p.usedMentor = false;
+        p.liveViewCount = 0;
+        p.usedSealThisGame = false;
+        p.evoCandidates.clear();
+        p.evoTotal = 0;
+        p.evoTurn = 0;
+        p.acUsedThisTurn = 0;
+        p.acLimit = 1;
+        p.usedUndefeatedThisTurn = false;
+        p.usedKangThisTurn = false;
+        p.usedSkillsThisTurn.clear();
+        p.bossDmgBoost = false;
+        p.usedAskThisTurn = false;
+        p.usedSkirtThisTurn = false;
+        p.akioiActive = false;
+        p.yanyaCountThisTurn = 0;
+        p.akAllActive = false;
+        p.kachangSuccess = 0;
+        p.examThisTurn = false;
+        p.depressionAsked = false;
+        for (int i = 0; i < 4; ++i) p.hand.push_back(drawCard());
+    }
+    currentTurn = 0;
+    roundCount = 1;
+    activeEvent = "?";
+    pending.reset();
+    gameOver = false;
+    winner.clear();
+    log.clear();
+    phase = ROUND_START;
+    addLog("房间满员，游戏开始！");
+    nextPhase();
+}
+
+// 主动技能: 神犇·AKIOI / 毒瘤出题人·出原题
+bool Room::useSkill(int pid, const std::string& skill, const json& msg, json& result) {
+    Player& player = getPlayer(pid);
+    if (!player.alive) { result["error"] = "已阵亡，无法使用技能"; return false; }
+    // 神犇·AKIOI: 弃2牌, 本回合可额外使用两张AC, 且这些杀伤害+1
+    if (skill == "akioi" && player.profession == "神犇") {
+        if (player.usedSkillsThisTurn.count("akioi")) { result["error"] = "本回合已使用过AKIOI"; return false; }
+        if ((int)player.hand.size() < 2) { result["error"] = "手牌不足2张，无法使用AKIOI"; return false; }
+        player.usedSkillsThisTurn.insert("akioi");
+        discardFromHand(player, (int)player.hand.size()-1);
+        discardFromHand(player, (int)player.hand.size()-1);
+        player.acLimit += 2;
+        player.akioiActive = true;
+        addLog("⚡ " + player.name + "【AKIOI】弃2牌，本回合可额外使用2张AC且伤害+1");
+        result["success"] = true;
+        return true;
+    }
+    // 毒瘤出题人·出原题: 弃两张同花色, 观看并弃置目标一张手牌, 其摸1
+    if (skill == "chuyuanti" && player.profession == "毒瘤出题人") {
+        if (player.usedSkillsThisTurn.count("chuyuanti")) { result["error"] = "本回合已使用过出原题"; return false; }
+        std::map<std::string,int> suitCount;
+        for (auto& c : player.hand) suitCount[c.suit]++;
+        std::string pickSuit;
+        for (auto& kv : suitCount) if (kv.second >= 2) { pickSuit = kv.first; break; }
+        if (pickSuit.empty()) { result["error"] = "需要弃两张同花色的手牌"; return false; }
+        int discarded = 0;
+        for (size_t i = 0; i < player.hand.size() && discarded < 2; ) {
+            if (player.hand[i].suit == pickSuit) { discardFromHand(player, (int)i); discarded++; }
+            else ++i;
+        }
+        player.usedSkillsThisTurn.insert("chuyuanti");
+        std::vector<int> tg;
+        if (msg.contains("targets") && msg["targets"].is_array()) {
+            json tar = msg["targets"];
+            for (size_t i=0;i<tar.size();++i) tg.push_back((int)tar[i]);
+        }
+        if (tg.empty() || !isAlive(tg[0]) || tg[0] == pid) { result["error"] = "请选择有效目标"; return false; }
+        Player& target = getPlayer(tg[0]);
+        if (!target.hand.empty()) {
+            int idx = randInt(0, (int)target.hand.size()-1);
+            discardFromHand(target, idx);
+            target.hand.push_back(drawCard());
+            addLog(player.name + "【出原题】弃置 " + target.name + " 一张手牌，其摸1");
+        } else { addLog(player.name + "【出原题】" + target.name + " 无手牌"); }
+        result["success"] = true;
+        return true;
+    }
+    // 女装大佬·直播: 弃一张红色牌, 观看一名角色手牌并获取其中一张
+    if (skill == "zhibo" && player.profession == "女装大佬") {
+        if (player.usedSkillsThisTurn.count("zhibo")) { result["error"] = "本回合已使用过直播"; return false; }
+        int redIdx = -1;
+        for (size_t i=0;i<player.hand.size();++i) if (player.hand[i].isRed()) { redIdx = (int)i; break; }
+        if (redIdx < 0) { result["error"] = "需要弃一张红色手牌"; return false; }
+        discardFromHand(player, redIdx);
+        player.usedSkillsThisTurn.insert("zhibo");
+        std::vector<int> tg;
+        if (msg.contains("targets") && msg["targets"].is_array()) {
+            json tar = msg["targets"];
+            for (size_t i=0;i<tar.size();++i) tg.push_back((int)tar[i]);
+        }
+        if (tg.empty() || !isAlive(tg[0]) || tg[0] == pid) { result["error"] = "请选择有效目标"; return false; }
+        addLog("📺 " + player.name + "【直播】观看 " + getPlayer(tg[0]).name + " 的手牌");
+        startResponse("WAIT_LIVE_TARGET", pid, {}, {{"target", tg[0]}});
+        result["pending"] = "live_steal";
+        return true;
+    }
+    result["error"] = "未知技能";
+    return false;
+}
+
 bool Room::processResponse(int pid, const json& msg, json& result) {
     if (!pending || pending->targetPlayer != pid) return false;
     std::string type = pending->type;
@@ -591,22 +952,23 @@ bool Room::processResponse(int pid, const json& msg, json& result) {
         int cardIdx = msg.value("card_index", -1);
         int attacker = pending->context["attacker"];
         int cardId = pending->context["card_id"];
-        bool virtualCard = pending->context.value("virtual", false);
         Player& att = getPlayer(attacker);
-        if (cardIdx < 0) {
+        Player& target = getPlayer(pid);
+        // 全员卡常(毒瘤觉醒): 其他角色不能使用WA, 视为放弃闪避
+        bool waBanned = banWANextTurn && target.name != banWABy;
+        if (cardIdx < 0 || waBanned) {
             auto it = std::find_if(att.hand.begin(), att.hand.end(), [&](Card& c){ return c.id == cardId; });
             if (it != att.hand.end()) {
                 Card usedCard = *it;
                 att.hand.erase(it); discardCard(usedCard);
-                Player& target = getPlayer(pid);
                 int dmg = 1; if (att.bossDmgBoost) dmg+=1;
+                if (waBanned) addLog(target.name + " 被全员卡常，无法使用WA");
                 dealDamage(att, target, dmg, true);
                 att.acUsedThisTurn++;
                 if (dmg>0 && att.evoTotal<3 && att.evoTurn<1 && !usedCard.evolved) att.evoCandidates.push_back(usedCard.id);
             }
             clearPending(); result["success"]=true; return true;
         }
-        Player& target = getPlayer(pid);
         if (cardIdx >= (int)target.hand.size()) return false;
         Card& waCard = target.hand[cardIdx];
         bool isUnionFind = (target.armor && target.armor->name == "并查集" && waCard.name != "WA");
@@ -617,9 +979,75 @@ bool Room::processResponse(int pid, const json& msg, json& result) {
             att.hand.push_back(drawCard()); addLog(att.name + "【线段树】摸1牌");
         }
         auto it = std::find_if(att.hand.begin(), att.hand.end(), [&](Card& c){ return c.id == cardId; });
+        bool wasEvolved = (it != att.hand.end()) ? it->evolved : false;
         if (it != att.hand.end()) discardFromHand(att, it - att.hand.begin());
+        // AK代码(进化): 被WA抵消时你摸1张牌
+        if (wasEvolved) {
+            att.hand.push_back(drawCard());
+            addLog(att.name + "【AK代码】被抵消，摸1牌");
+        }
+        // 平衡树: 被闪可弃1牌强制命中
+        if (att.weapon && att.weapon->name == "平衡树" && !att.hand.empty()) {
+            discardFromHand(att, (int)att.hand.size()-1);
+            addLog(att.name + "【平衡树】弃1牌强制命中！");
+            int dmg = 1; if (att.bossDmgBoost) dmg+=1;
+            dealDamage(att, target, dmg, true);
+            att.acUsedThisTurn++;
+            clearPending(); result["success"]=true; return true;
+        }
         if (!isUnionFind && target.evoTotal<3 && target.evoTurn<1 && !waCard.evolved) target.evoCandidates.push_back(waCard.id);
         clearPending(); result["success"]=true; return true;
+    }
+    // 模拟赛 - 目标打出AC或受1伤 (逐个目标)
+    else if (type == "WAIT_EXAM_AC") {
+        json& ctx = pending->context;
+        std::vector<int> tlist = ctx["exam_targets"].get<std::vector<int>>();
+        int idx = ctx["exam_idx"];
+        int owner = ctx["owner"];
+        Player& tg = getPlayer(pid);
+        int cIdx = msg.value("card_index", -1);
+        bool played = false;
+        if (cIdx >= 0 && cIdx < (int)tg.hand.size() && tg.hand[cIdx].name == "AC代码") {
+            discardFromHand(tg, cIdx);
+            addLog(tg.name + " 打出AC代码应对模拟赛");
+            played = true;
+        }
+        if (!played) {
+            dealDamage(getPlayer(owner), tg, 1, false);
+            addLog(tg.name + " 无AC应对模拟赛，受到1点伤害");
+        }
+        idx++;
+        if (idx < (int)tlist.size()) {
+            ctx["exam_idx"] = idx;
+            int nt = tlist[idx];
+            Player& nt2 = getPlayer(nt);
+            std::vector<int> acIdxs;
+            for (size_t i=0;i<nt2.hand.size();++i) if (nt2.hand[i].name=="AC代码") acIdxs.push_back(i);
+            startResponse("WAIT_EXAM_AC", nt, acIdxs, ctx);
+            result["pending"] = "exam_ac"; return true;
+        }
+        clearPending(); result["success"]=true; return true;
+    }
+    // 手动测评 - 选择判定花色
+    else if (type == "WAIT_JUDGE_COLOR") {
+        std::string color = msg.value("color", std::string(""));
+        if (color != "red" && color != "black") return false;
+        forcedJudgeColor = color;
+        addLog(getPlayer(pid).name + "【手动测评】下一次判定花色强制为" + (color=="red"?"红色":"黑色"));
+        clearPending(); result["success"]=true; return true;
+    }
+    // 摸鱼怪·颓废 - 回合开始选择
+    else if (type == "WAIT_DEPRESSION") {
+        std::string choice = msg.value("choice", std::string("none"));
+        Player& p = getPlayer(pid);
+        if (p.depression > 0) {
+            if (choice == "heal") { p.hp = std::min(p.max_hp, p.hp+1); p.depression--; addLog(p.name + " 使用颓废标记回复1体力"); }
+            else if (choice == "draw") { p.hand.push_back(drawCard()); p.hand.push_back(drawCard()); p.depression--; addLog(p.name + " 使用颓废标记摸2牌"); }
+            else { addLog(p.name + " 不使用颓废标记"); }
+        }
+        clearPending();
+        nextPhase(); // 继续回合流程
+        result["success"]=true; return true;
     }
     // 进化选择
     else if (type == "evolution_select") {

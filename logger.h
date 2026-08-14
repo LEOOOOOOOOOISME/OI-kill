@@ -9,6 +9,7 @@
 #include <fstream>
 #include <mutex>
 #include <vector>
+#include <iostream>
 #include "socket_util.h"
 
 class Logger {
@@ -31,10 +32,14 @@ public:
         std::lock_guard<std::mutex> lock(mtx_);
         ensureDir(dir_);
         if (!fout_.is_open() || needsRoll()) roll();
-        fout_ << "[" << sockutil::timestamp() << "] [" << level << "] " << msg << "\n";
+        std::string line = "[" + sockutil::timestamp() + "] [" + level + "] " + msg;
+        fout_ << line << "\n";
         fout_.flush();
+        // 同步输出到控制台(cmd窗口), 使日志与运行日志实时可见
+        std::cout << line << "\n";
+        std::cout.flush();
         // 保留最近100条在内存
-        recent_.push_back("[" + sockutil::timestamp() + "] [" + level + "] " + msg);
+        recent_.push_back(line);
         if (recent_.size() > 100) recent_.erase(recent_.begin());
     }
 

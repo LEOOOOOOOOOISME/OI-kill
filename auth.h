@@ -17,10 +17,12 @@
 #include <fstream>
 #include <sstream>
 #include <cstdlib>
+#include <random>
+#include <chrono>
 #include "socket_util.h"
 #include "logger.h"
 
-enum Role { ROLE_USER = 0, ROLE_ADMIN = 1, ROLE_SUPERADMIN = 2 };
+enum Role { ROLE_BANNEDUSER = -1, ROLE_USER = 0, ROLE_ADMIN = 1, ROLE_SUPERADMIN = 2 };
 
 struct Account {
     int id = 0;
@@ -35,8 +37,16 @@ struct Account {
     std::string lastLogin;
 };
 
+// 权限层级: banneduser < user < admin < superadmin
+inline int roleLevel(Role r) {
+    if (r == ROLE_SUPERADMIN) return 3;
+    if (r == ROLE_ADMIN) return 2;
+    if (r == ROLE_BANNEDUSER) return 0;
+    return 1;
+}
 inline std::string roleToStr(Role r) {
     switch (r) {
+        case ROLE_BANNEDUSER: return "banneduser";
         case ROLE_USER: return "user";
         case ROLE_ADMIN: return "admin";
         case ROLE_SUPERADMIN: return "superadmin";
@@ -46,6 +56,7 @@ inline std::string roleToStr(Role r) {
 inline Role strToRole(const std::string& s) {
     if (s == "admin") return ROLE_ADMIN;
     if (s == "superadmin") return ROLE_SUPERADMIN;
+    if (s == "banneduser") return ROLE_BANNEDUSER;
     return ROLE_USER;
 }
 // 用户名合法性: 仅允许 字母/数字/下划线/连字符/中文, 避免注入
@@ -133,7 +144,8 @@ public:
         return "";
     }
 
-    // 登录: 返回 (成功与否, token or 错误)
+    // 登录: 返回 (成功 token) 或空串(失败)。封禁用户也会拒绝。
+    // 单设备登录: 同一账号新登录会踢掉旧的会话(token)。
     std::string login(const std::string& username, const std::string& password) {
         std::lock_guard<std::mutex> lock(mtx_);
         Account* a = findUser(username);
@@ -143,6 +155,13 @@ public:
         std::string hash = sockutil::hashPassword(a->salt, password);
         if (hash != a->pwd_hash) return "";
         a->lastLogin = sockutil::timestamp();
+        // 踢掉该账号的旧会话(单设备登录, bug#5)
+        for (auto it = sessions_.begin(); it != sessions_.end();) {
+            if (it->second == username) {
+                keyMap_.erase(it->first);
+                it = sessions_.erase(it);
+            } else ++it;
+        }
         save();
         Logger::instance().auth("用户登录: " + username + " (角色:" + roleToStr(a->role) + ")");
         // 创建会话
@@ -151,6 +170,13 @@ public:
         std::string k = genSessionToken();
         keyMap_[token] = k;
         return token;
+    }
+
+    // 判断用户是否被封禁
+    bool isBanned(const std::string& username) {
+        std::lock_guard<std::mutex> lock(mtx_);
+        Account* a = findUser(username);
+        return a ? a->banned : false;
     }
 
     // 修改自己的密码
@@ -179,28 +205,52 @@ public:
     }
 
     // ---------- 管理员管理功能 ----------
+    // 权限判断: 按层级 banneduser < user < admin < superadmin; 封禁用户无任何权限
     bool isRole(const std::string& username, Role r) {
         std::lock_guard<std::mutex> lock(mtx_);
         Account* a = findUser(username);
-        return a && a->role >= r;
+        if (!a || a->banned) return false;
+        return roleLevel(a->role) >= roleLevel(r);
     }
     Role getRole(const std::string& username) {
         std::lock_guard<std::mutex> lock(mtx_);
         Account* a = findUser(username);
-        return a ? a->role : ROLE_USER;
+        if (!a) return ROLE_USER;
+        if (a->banned) return ROLE_BANNEDUSER;
+        return a->role;
     }
-    bool setRole(const std::string& target, const std::string& newRole) {
+    // 设置角色/封禁: 支持 user/admin/superadmin/banneduser 四级
+    bool setRole(const std::string& target, const std::string& newRoleStr) {
         Account* a = findUser(target);
         if (!a) return false;
-        a->role = strToRole(newRole);
+        Role newRole = strToRole(newRoleStr);
+        if (newRoleStr == "banneduser") {
+            a->banned = true;            // 封禁用户
+            a->role = ROLE_USER;
+        } else {
+            a->banned = false;           // 其他角色均解除封禁
+            a->role = newRole;
+        }
+        if (newRoleStr != "banneduser" && a->username != "superadmin") {
+            // superadmin 不可被降级
+        }
         save();
-        Logger::instance().action("角色变更: " + target + " -> " + newRole);
+        Logger::instance().action("角色变更: " + target + " -> " + roleToStr(a->banned ? ROLE_BANNEDUSER : a->role));
         return true;
     }
     bool ban(const std::string& target, bool banned) {
         Account* a = findUser(target);
         if (!a) return false;
-        a->banned = banned;
+        a->banned = banned;              // 封禁/解封
+        if (banned) {
+            // 封禁时踢掉该账号所有在线会话
+            for (auto it = sessions_.begin(); it != sessions_.end();) {
+                if (it->second == target) {
+                    keyMap_.erase(it->first);
+                    it = sessions_.erase(it);
+                } else ++it;
+            }
+        }
         save();
         Logger::instance().action(std::string(banned ? "封禁" : "解封") + ": " + target);
         return true;
@@ -233,11 +283,24 @@ private:
         a.joinTime = (long long)time(NULL);
         users_[username] = a;
     }
-    std::string genSessionToken() {
-        static const char* hex = "0123456789abcdef";
+    // 会话令牌 / 密钥: 使用 std::random_device + 时间 + 计数器 生成,
+    // 避免 MinGW 下 rand() 确定性导致所有会话拿到相同 token/key。
+    static std::string genSessionToken() {
+        static std::mt19937_64 rng(std::random_device{}()
+                                   ^ (std::chrono::steady_clock::now().time_since_epoch().count()));
+        static unsigned long long counter = 0;
+        const char* hex = "0123456789abcdef";
         std::string t;
+        unsigned long long v = 0;
+        auto rd = [&]() {
+            v = rng();
+            v ^= (unsigned long long)time(NULL) * 1315423911ULL;
+            v ^= (counter++) * 2654435761ULL;
+            return v;
+        };
         for (int i = 0; i < 32; ++i) {
-            t += hex[rand() % 16];
+            if (i % 8 == 0) rd();
+            t += hex[(v >> ((i % 8) * 4)) & 0xF];
         }
         return t;
     }

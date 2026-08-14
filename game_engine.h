@@ -63,7 +63,15 @@ struct Player {
     bool usedUndefeatedThisTurn = false;
     bool usedKangThisTurn = false;
     std::set<std::string> usedSkillsThisTurn;
-    bool bossDmgBoost = false;
+    bool bossDmgBoost = false;        // 传奇Au觉醒: 本局剩余时间伤害+1
+    bool usedAskThisTurn = false;     // 萌新·问问题: 成为卡牌唯一目标时摸1(每回合限一次)
+    bool usedSkirtThisTurn = false;   // 女装大佬·女装: 成为锦囊目标时摸1(每回合限一次)
+    bool akioiActive = false;         // 神犇·AKIOI: 本回合已激活(伤害+1)
+    int yanyaCountThisTurn = 0;       // 神犇·碾压本回合打出AC数量(觉醒计数)
+    bool akAllActive = false;         // 神犇觉醒·AK全场: 下一张AC可指定任意数量目标
+    int kachangSuccess = 0;           // 毒瘤·卡常成功次数(觉醒计数)
+    bool examThisTurn = false;        // 金牌教练·模拟赛是否已在本回合使用
+    bool depressionAsked = false;     // 摸鱼怪·颓废: 本回合是否已询问
 };
 
 struct Pending {
@@ -86,10 +94,14 @@ public:
     std::string activeEvent = "?";
     bool gameOver = false;
     std::string winner;
+    int awakeningCount = 0;            // 觉醒次数(用于本局囧闻)
 
     enum Phase { ROUND_START, JUDGE, DRAW, PLAY, DISCARD, END, GAME_OVER };
     Phase phase = ROUND_START;
     std::unique_ptr<Pending> pending;
+    std::string forcedJudgeColor = ""; // 手动测评: 强制下一次判定花色 red/black
+    bool banWANextTurn = false;        // 毒瘤觉醒·全员卡常: 其他角色不能使用WA
+    std::string banWABy = "";          // 记录发起全员卡常的玩家名(用于回合结束时解除)
 
     Player& getPlayer(int pid);
     bool isAlive(int pid) const;
@@ -110,7 +122,9 @@ public:
     void nextPhase();
     void tryEvolutionSelect(Player& p);
     bool useCard(int pid, int cardIdx, std::vector<int> targets, json& result);
+    bool useSkill(int pid, const std::string& skill, const json& msg, json& result);
     bool processResponse(int pid, const json& msg, json& result);
+    void resetForStart();   // 房间满员时重置对局并开始
     json getStateJson(int viewerId);
 };
 

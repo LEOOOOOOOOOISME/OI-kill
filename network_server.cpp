@@ -128,8 +128,10 @@ void WebServer::handleHttp(SOCKET s, HttpRequest& req) {
             }
             username = form["u"]; password = form["p"];
         } else { username = req.query["u"]; password = req.query["p"]; }
-                std::string token = AuthManager::instance().login(username, password);
-        if (token.empty()) {
+                                std::string token = AuthManager::instance().login(username, password);
+        if (AuthManager::instance().isBanned(username)) {
+            resp = buildHttpResponse(200, "application/json", "{\"ok\":false,\"msg\":\"该账号已被封禁，请联系管理员\"}");
+        } else if (token.empty()) {
             resp = buildHttpResponse(200, "application/json", "{\"ok\":false,\"msg\":\"用户名或密码错误\"}");
         } else {
             std::string key = AuthManager::instance().sessionKey(token);
@@ -232,8 +234,9 @@ void WebServer::handleHttp(SOCKET s, HttpRequest& req) {
         else {
             json arr = json::array();
             std::vector<Account> us = AuthManager::instance().listUsers();
-            for (size_t i=0;i<us.size();++i) {
-                json u; u["id"]=us[i].id; u["username"]=us[i].username; u["role"]=roleToStr(us[i].role);
+                        for (int i=0;i<(int)us.size();++i) {
+                json u; u["id"]=us[i].id; u["username"]=us[i].username;
+                u["role"]=us[i].banned ? "banneduser" : roleToStr(us[i].role);
                 u["banned"]=us[i].banned; u["gamesPlayed"]=us[i].gamesPlayed; u["gamesWon"]=us[i].gamesWon;
                 u["lastLogin"]=us[i].lastLogin; arr.push_back(u);
             }
@@ -323,14 +326,17 @@ void WebServer::handleAdminAction(SOCKET s, HttpRequest& req, std::string& resp)
             if (j["ok"]) Logger::instance().action("封禁 " + me + (ban? "封禁 " : "解封 ") + "uid=" + std::to_string(uid));
         }
     }
-    else if (req.path == "/api/admin/set_role") {
-        if (!isSA) { j["msg"]="仅超级管理员可封禁"; }
+        else if (req.path == "/api/admin/set_role") {
+        if (!isSA) { j["msg"]="仅超级管理员可修改角色"; }
         else {
-            int uid = atoi(form["uid"].c_str()); std::string role = form["role"];
+            int uid = atoi(form["uid"].c_str());
+            std::string newRole = form["role"];
             std::vector<Account> us = AuthManager::instance().listUsers();
             for (size_t i=0;i<us.size();++i) if (us[i].id==uid) {
-                AuthManager::instance().setRole(us[i].username, role); j["ok"]=true; break;
+                if (us[i].username == "superadmin") { j["msg"]="不可修改超级管理员账号"; break; }
+                AuthManager::instance().setRole(us[i].username, newRole); j["ok"]=true; break;
             }
+            if (!j.contains("ok") || !j["ok"]) j["ok"]=false;
         }
     }
     else if (req.path == "/api/admin/reset_pwd") {
@@ -357,8 +363,15 @@ void WebServer::handleAdminAction(SOCKET s, HttpRequest& req, std::string& resp)
 // ---------------- WebSocket 部分 ----------------
 // 用 Xor 加密: 密文 = base64(xor(key, json))
 void WebServer::handleWebSocket(SOCKET s, HttpRequest& req) {
+    // WebSocket 长连接: 取消接收超时(阻塞等待), 避免玩家闲置数秒即掉线(bug #3)。
+    // 依赖 TCP 保活与客户端/服务器心跳检测死连接。
+    DWORD noTimeout = 0;
+    setsockopt(s, SOL_SOCKET, SO_RCVTIMEO, (const char*)&noTimeout, sizeof(noTimeout));
+    BOOL keepAlive = TRUE;
+    setsockopt(s, SOL_SOCKET, SO_KEEPALIVE, (const char*)&keepAlive, sizeof(keepAlive));
+
     // 从cookie或查询参数获取token
-    std::string token = req.cookies["session"];
+        std::string token = req.cookies["session"];
     if (token.empty()) token = req.query["token"];
     std::string user = AuthManager::instance().usernameForToken(token);
     if (user.empty()) { wsSend(s, "{\"type\":\"error\",\"msg\":\"未登录\"}"); return; }
@@ -384,6 +397,11 @@ void WebServer::handleWebSocket(SOCKET s, HttpRequest& req) {
 
     // 处理登录请求
     while (running_) {
+        // 权限强化(bug#6): 若账号被封禁, 立即结束其游戏连接
+        if (AuthManager::instance().isBanned(user)) {
+            wsSend(s, encryptText(key, "{\"type\":\"error\",\"msg\":\"账号已被封禁\"}"));
+            break;
+        }
         std::string payload; bool needClose=false;
         if (!wsRecv(s, payload, needClose)) break;
         if (needClose) break;
@@ -411,30 +429,39 @@ void WebServer::handleWebSocket(SOCKET s, HttpRequest& req) {
                 else {
                     gs.roomId = rId;
                     // 成功加入, 锁定房间数据
-                    std::lock_guard<std::mutex> lk(mgr_->mtx);
-                    if (mgr_->rooms.count(rId)) {
-                        std::shared_ptr<Room> room = mgr_->rooms[rId];
-                        // 找到用户名对应的对局槽位 (玩家id)
-                        int pid = -1;
-                        for (size_t pi = 0; pi < room->players.size(); ++pi) {
-                            if (room->players[pi].name == user) { pid = (int)pi; break; }
-                        }
-                        if (pid < 0) {
-                            // 不在槽位中, 尝试加入
+                    {
+                        std::lock_guard<std::mutex> lk(mgr_->mtx);
+                        if (mgr_->rooms.count(rId)) {
+                            std::shared_ptr<Room> room = mgr_->rooms[rId];
+                            // 找到用户名对应的对局槽位 (玩家id)
+                            int pid = -1;
                             for (size_t pi = 0; pi < room->players.size(); ++pi) {
-                                if (room->players[pi].name == "等待加入") {
-                                    room->players[pi].name = user; pid = (int)pi; break;
+                                if (room->players[pi].name == user) { pid = (int)pi; break; }
+                            }
+                            if (pid < 0) {
+                                // 不在槽位中, 尝试加入
+                                for (size_t pi = 0; pi < room->players.size(); ++pi) {
+                                    if (room->players[pi].name == "等待加入") {
+                                        room->players[pi].name = user; pid = (int)pi; break;
+                                    }
                                 }
                             }
+                            gs.playerId = pid;
                         }
-                        gs.playerId = pid;
-                        // 加入成功后广播一次状态
-                        if (pid >= 0) broadcastToRoomState(rId);
                     }
+                    // 加入成功后广播一次状态 (须在释放 mgr_->mtx 之后调用,
+                    // 否则 broadcastToRoomState 会重复加锁导致自死锁)
+                    if (gs.playerId >= 0) broadcastToRoomState(rId);
                 }
             }
             else if (type == "leave_room") {
-                if (gs.roomId >= 0) { mgr_->removePlayer(gs.roomId, user); gs.roomId = -1; }
+                if (gs.roomId >= 0) {
+                    int leftRoom = gs.roomId;
+                    mgr_->removePlayer(leftRoom, user);
+                    gs.roomId = -1;
+                    // 通知房间内其他玩家刷新状态
+                    broadcastToRoomState(leftRoom);
+                }
                 wsSend(s, encryptText(key, "{\"type\":\"end\",\"msg\":\"已退出房间\"}"));
             }
             else if (type == "chat") {
@@ -455,36 +482,53 @@ void WebServer::handleWebSocket(SOCKET s, HttpRequest& req) {
                     broadcastToLobby(chat.dump());           // 大厅消息(全体在线)
                 }
             }
-            else if (type == "use_card" || type == "response" || type == "skip_phase" || type == "end_turn") {
+            else if (type == "use_card" || type == "response" || type == "use_skill" || type == "skip_phase" || type == "end_turn") {
                 if (gs.roomId >= 0) {
-                    std::lock_guard<std::mutex> lk(mgr_->mtx);
-                    if (mgr_->rooms.count(gs.roomId)) {
-                        std::shared_ptr<Room> room = mgr_->rooms[gs.roomId];
+                    json result;
+                    {
+                        std::lock_guard<std::mutex> lk(mgr_->mtx);
+                        if (mgr_->rooms.count(gs.roomId)) {
+                            std::shared_ptr<Room> room = mgr_->rooms[gs.roomId];
 
-                                                json result;
-                        if (type == "use_card") {
+                            // 满员检查: 房间未满员前禁止出牌/响应/使用技能 (bug修复)
+                            int joinedCnt = 0;
+                            for (size_t pi=0; pi<room->players.size(); ++pi)
+                                if (room->players[pi].name != "等待加入") joinedCnt++;
+                            bool roomFull = joinedCnt >= mgr_->roomInfos[gs.roomId].playerLimit;
+                            if (!roomFull) {
+                                result["error"] = "房间尚未满员（" + std::to_string(joinedCnt) + "/" +
+                                                  std::to_string(mgr_->roomInfos[gs.roomId].playerLimit) +
+                                                  "），满员后游戏开始";
+                            } else if (type == "use_card") {
                                                         int idx = j.value("card_index",-1);
-                            std::vector<int> targets;
-                            if (j.contains("targets") && j.at("targets").is_array()) {
-                                json tar = j.at("targets");
-                                for (size_t i=0;i<tar.size();++i) targets.push_back((int)tar[i]);
-                            }
-                            room->useCard(gs.playerId, idx, targets, result);
-                        } else if (type == "response") {
-                            room->processResponse(gs.playerId, j, result);
-                        } else if (type == "skip_phase" || type == "end_turn") {
-                            if (room->currentTurn == gs.playerId && room->phase == Room::PLAY) {
-                                room->phase = Room::DISCARD; room->nextPhase();
+                                std::vector<int> targets;
+                                if (j.contains("targets") && j.at("targets").is_array()) {
+                                    json tar = j.at("targets");
+                                    for (size_t i=0;i<tar.size();++i) targets.push_back((int)tar[i]);
+                                }
+                                room->useCard(gs.playerId, idx, targets, result);
+                            } else if (type == "response") {
+                                room->processResponse(gs.playerId, j, result);
+                            } else if (type == "use_skill") {
+                                // 主动技能: 神犇AKIOI / 毒瘤出原题 / 女装直播
+                                std::string skill = j.value("skill", std::string(""));
+                                room->useSkill(gs.playerId, skill, j, result);
+                            } else if (type == "skip_phase" || type == "end_turn") {
+                                if (room->currentTurn == gs.playerId && room->phase == Room::PLAY) {
+                                    room->phase = Room::DISCARD; room->nextPhase();
+                                }
                             }
                         }
-                        broadcastToRoomState(gs.roomId);
                     }
+                    // 技能/卡牌失败时给玩家明确的错误反馈
+                    if (result.contains("error")) {
+                        std::string errMsg = result.value("error", std::string("操作失败"));
+                        wsSend(s, encryptText(key, "{\"type\":\"error\",\"msg\":\"" + errMsg + "\"}"));
+                    }
+                    // 释放 mgr_->mtx 后再广播状态, 避免 self-deadlock
+                    broadcastToRoomState(gs.roomId);
                 }
             }
-                } catch (const std::exception& ex) {
-                    Logger::instance().warn(std::string("WS parse err: ") + ex.what());
-                    Logger::instance().warn("WS key=" + key + " user=" + user);
-                    Logger::instance().warn("WS raw payload(b64 head): " + payload.substr(0, 40));
                 } catch (...) {
                     Logger::instance().warn("收到无法解析的WebSocket消息");
                 }
@@ -511,12 +555,13 @@ void WebServer::broadcastToRoom(int roomId, const std::string& payload, int exce
     }
 }
 
-// 大厅消息: 广播给当前停留在大厅(roomId<0)的所有在线会话
+// 大厅消息: 作为全局聊天频道广播给所有在线会话
+// (不再局限于当前停留在大厅的玩家, 游戏中玩家回到大厅后也能看到全部大厅消息)
 void WebServer::broadcastToLobby(const std::string& payload) {
     std::lock_guard<std::mutex> lk(sessionsMtx_);
     for (std::set<GameSession*>::iterator it = gameSessions_.begin(); it != gameSessions_.end(); ++it) {
         GameSession* gs = *it;
-        if (gs->roomId < 0 && gs->active) {
+        if (gs->active) {
             std::lock_guard<std::mutex> sl(gs->mtx);
             std::string key = AuthManager::instance().sessionKey(gs->token);
             wsSend(gs->sock, encryptText(key, payload));

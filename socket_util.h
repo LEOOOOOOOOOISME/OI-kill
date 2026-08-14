@@ -227,6 +227,13 @@ inline bool parseHttpRequest(SOCKET s, HttpRequest& req) {
         req.headers[key] = val;
         if (key == "content-length") contentLength = atol(val.c_str());
     }
+    // 修复: 客户端发送 Expect: 100-continue 时会等待服务器的 100 Continue 响应,
+    // 然后才发送请求体。若不响应, 客户端将一直等待, 服务器也等不到请求体,
+    // 导致登录/注册等 POST 请求"无响应"(内网另一台电脑访问时尤其明显)。
+    if (toLower(req.headers["expect"]) == "100-continue" && contentLength > 0) {
+        static const char* cont = "HTTP/1.1 100 Continue\r\n\r\n";
+        sendAll(s, cont, (int)strlen(cont));
+    }
     if (req.headers.count("cookie")) {
         for (auto& ckv : split(req.headers["cookie"], ';')) {
             size_t eq = ckv.find('=');
@@ -313,22 +320,38 @@ inline bool wsSend(SOCKET s, const std::string& payload) {
 
 // 客户端->服务器帧 (客户端必须掩码)
 inline bool wsRecv(SOCKET s, std::string& out, bool& needClose) {
-    unsigned char h[2];
-    if (!recvExact(s, (char*)h, 2)) return false;
-    int opcode = h[0] & 0x0F;
-    bool masked = h[1] & 0x80;
-    unsigned long long len = h[1] & 0x7F;
-    if (len == 126) { unsigned char b[2]; if(!recvExact(s,(char*)b,2)) return false; len = (b[0]<<8)|b[1]; }
-    else if (len == 127) { unsigned char b[8]; if(!recvExact(s,(char*)b,8)) return false; len=0; for(int i=0;i<8;++i) len=(len<<8)|b[i]; }
-    if (len > (1<<22)) return false;
-    char mask[4] = {0,0,0,0};
-    if (masked) recvExact(s, mask, 4);
-    out.resize(len);
-    if (len > 0) recvExact(s, &out[0], (int)len);
-    if (masked) for (size_t i=0;i<len;++i) out[i] ^= mask[i%4];
-    if (opcode == 8) { needClose = true; return true; }
-    if (opcode == 9) { return false; } // ping
-    return true;
+    out.clear();
+    while (true) {
+        unsigned char h[2];
+        if (!recvExact(s, (char*)h, 2)) return false;
+        int opcode = h[0] & 0x0F;
+        bool masked = h[1] & 0x80;
+        unsigned long long len = h[1] & 0x7F;
+        if (len == 126) { unsigned char b[2]; if(!recvExact(s,(char*)b,2)) return false; len = (b[0]<<8)|b[1]; }
+        else if (len == 127) { unsigned char b[8]; if(!recvExact(s,(char*)b,8)) return false; len=0; for(int i=0;i<8;++i) len=(len<<8)|b[i]; }
+        if (len > (1<<22)) return false;
+        char mask[4] = {0,0,0,0};
+        if (masked) recvExact(s, mask, 4);
+        std::string frame;
+        frame.resize((size_t)len);
+        if (len > 0) recvExact(s, &frame[0], (int)len);
+        if (masked) for (size_t i=0;i<len;++i) frame[i] ^= mask[i%4];
+
+        if (opcode == 8) { needClose = true; return true; }   // close 帧
+        if (opcode == 9) {                                     // ping: 回 pong 并继续等待数据
+            std::string pong;
+            pong += (char)0x8A; // FIN + pong
+            if (len < 126) pong += (char)len;
+            else if (len <= 0xFFFF) { pong += (char)126; pong += (char)((len>>8)&0xFF); pong += (char)(len&0xFF); }
+            pong += frame;
+            sendAll(s, pong.data(), pong.size());
+            continue;
+        }
+        if (opcode == 10) continue; // pong: 忽略并继续
+        if (opcode != 1 && opcode != 2) continue; // 忽略非文本/二进制帧
+        out = frame;
+        return true;
+    }
 }
 
 } // namespace sockutil

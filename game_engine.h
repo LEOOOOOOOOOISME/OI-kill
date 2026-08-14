@@ -72,6 +72,30 @@ struct Player {
     int kachangSuccess = 0;           // 毒瘤·卡常成功次数(觉醒计数)
     bool examThisTurn = false;        // 金牌教练·模拟赛是否已在本回合使用
     bool depressionAsked = false;     // 摸鱼怪·颓废: 本回合是否已询问
+    bool skillBlocked = false;        // TLE: 本回合不能使用主动技能
+    int handLimitMod = 0;             // MLE: 本回合手牌上限修正(-2)
+    bool noTrickThisTurn = false;     // CE: 本回合不能使用锦囊牌
+    int teachCount = 0;               // 学长·讲题次数(觉醒计数)
+    int judgeDefCount = 0;            // 评测姬·测评防伤次数(觉醒计数)
+    int tableCount = 0;               // 打表狂魔·打表次数(觉醒计数)
+    bool xuanxueUsedThisTurn = false; // 玄学选手·玄学: 每回合第一次受伤判定
+    // ===== v3.0 新字段 =====
+    std::vector<Card> delayArea;      // 判定区: 延时锦囊 (UB/水群/断网)
+    bool chained = false;             // 链式前向星: 横置状态
+    bool coffeeBoost = false;         // 咖啡: 本回合下一张AC伤害+1
+    int coffeeBoostDmg = 1;           // 咖啡加成值 (进化后=2)
+    // 新职业计数(觉醒)
+    int kouhaiCount = 0;              // 键盘侠·口嗨次数
+    int chaotijieCount = 0;           // 抄题解选手·抄题解次数
+    int yaxianCount = 0;              // 压线选手·压线过触发次数
+    int shuiqunCount = 0;             // 水群怪·水群次数
+    int baolingCount = 0;             // 爆零选手·爆零次数
+    bool usedDianjiThisGame = false;  // 图灵奖得主·奠基(限定技)
+    bool yaxianThisTurn = false;      // 压线选手: 每回合限1次压线过
+    int handLimitBonus = 0;           // 图灵奖得主: 手牌上限+1(被动), +2奠基后共+3
+    bool yunDuanUsed = false;         // 冷数据已用(每次攻击结算用一次)
+    bool acBaoHuTriggered = false;    // AC保护: 本回合是否已触发
+    bool skipDraw = false;            // 断网: 本回合跳过摸牌阶段
 };
 
 struct Pending {
@@ -102,6 +126,11 @@ public:
     std::string forcedJudgeColor = ""; // 手动测评: 强制下一次判定花色 red/black
     bool banWANextTurn = false;        // 毒瘤觉醒·全员卡常: 其他角色不能使用WA
     std::string banWABy = "";          // 记录发起全员卡常的玩家名(用于回合结束时解除)
+    std::vector<int> aoeResponded;     // AOE结算: 已响应过的玩家 (数据加强/评测机抽风)
+    int aoeOwner = -1;                 // AOE结算: 使用者
+    std::string aoeType = "";          // AOE结算: 数据加强 / 评测机抽风
+    int aoeBaseDmg = 1;                // AOE结算: 伤害基数(进化后=2)
+    bool aoeActive = false;            // AOE结算进行中
 
     Player& getPlayer(int pid);
     bool isAlive(int pid) const;
@@ -126,6 +155,11 @@ public:
     bool processResponse(int pid, const json& msg, json& result);
     void resetForStart();   // 房间满员时重置对局并开始
     json getStateJson(int viewerId);
+    // v3.0: AOE/延时锦囊辅助
+    void startAoe(int owner, const std::string& aoeName, int baseDmg);
+    void stepAoe();
+    void judgeDelayArea(Player& p);   // 结算一名角色的判定区延时锦囊
+    bool canUseWA(Player& p);         // 判断能否使用WA(含玄学判题/并查集)
 };
 
 std::mt19937& rng();

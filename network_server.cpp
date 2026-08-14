@@ -582,6 +582,7 @@ void WebServer::broadcastToRoomState(int roomId) {
                 targets.push_back(std::make_pair(gs->sock, key));
             }
         }
+
     }
     // 解析并处理消息
     std::lock_guard<std::mutex> lk(mgr_->mtx);

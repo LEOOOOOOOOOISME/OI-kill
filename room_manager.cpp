@@ -26,15 +26,33 @@ std::shared_ptr<Room> RoomManager::createRoom(int numPlayers, bool isPublic,
             room->deck.push_back(Card(room->nextCardId++, cname, randSuit(), randInt(1, 13), t));
         }
     };
-    addCards("AC代码", BASIC_ATTACK, 27);
+    // ---- 基本牌 (63) ----
+    addCards("做法假了", BASIC_ATTACK, 27);
     addCards("WA", BASIC_DODGE, 18);
-    addCards("RE", BASIC_HEAL, 12);
+    addCards("CCF捐款", BASIC_HEAL, 12);
+    addCards("咖啡", BASIC_HEAL, 6);          // 酒: 下张做法假了伤害+1 / 濒死自救
+    // ---- 武器 (13) ----
     addCards("树状数组", WEAPON, 1);
     addCards("线段树", WEAPON, 1);
     addCards("平衡树", WEAPON, 1);
     addCards("莫队算法", WEAPON, 1);
-    addCards("并查集", ARMOR, 2);
-    addCards("记忆化搜索", ARMOR, 2);
+    addCards("评测机连发", WEAPON, 1);       // 诸葛连弩: 无次数限制
+    addCards("管理员权限", WEAPON, 1);       // 青釭剑: 无视防具
+    addCards("双指针", WEAPON, 1);           // 雌雄双股剑: 按手牌数摸/弃
+    addCards("冷数据", WEAPON, 1);           // 寒冰剑: 伤害改为弃2
+    addCards("暴力枚举", WEAPON, 1);         // 贯石斧: 弃2强制命中
+    addCards("手写快排", WEAPON, 1);         // 丈八蛇矛: 2张手牌当杀
+    addCards("不死心", WEAPON, 1);           // 青龙偃月刀: 被闪再出杀
+    addCards("放手一搏", WEAPON, 1);         // 方天画戟: 最后手牌时3目标
+    addCards("拔网线", WEAPON, 1);           // 麒麟弓: 命中弃坐骑
+    // ---- 防具 (6) ----
+    addCards("并查集", ARMOR, 1);
+    addCards("记忆化搜索", ARMOR, 1);
+    addCards("玄学判题", ARMOR, 1);          // 八卦阵: 判定红桃当WA
+    addCards("黑名单", ARMOR, 1);            // 仁王盾: 黑色杀无效
+    addCards("防火墙", ARMOR, 1);            // 藤甲: 免疫AOE, 暴力事件受伤+1
+    addCards("AC保护", ARMOR, 1);            // 白银狮子: 受伤至多1, 失去回1
+    // ---- 坐骑 (10) ----
     addCards("快速读入", MOUNT_OFF, 5);
     addCards("内存屏障", MOUNT_DEF, 5);
     addCards("对拍", FUNC, 7);
@@ -49,6 +67,31 @@ std::shared_ptr<Room> RoomManager::createRoom(int numPlayers, bool isPublic,
     addCards("女装直播", FUNC, 1);
     addCards("手动测评", FUNC, 1);
     addCards("封神", FUNC, 1);
+    // 新增锦囊牌: 评测机裁决(TLE/MLE/CE)与OI名梗牌
+    addCards("TLE", FUNC, 3);        // 超时: 目标本回合不能使用主动技能
+    addCards("MLE", FUNC, 2);        // 内存超限: 目标本回合手牌上限-2
+    addCards("CE", FUNC, 2);         // 编译错误: 目标本回合不能使用锦囊
+    addCards("骗分", FUNC, 2);       // 回复1点体力
+    addCards("申诉", FUNC, 2);       // 从弃牌堆获得1张牌
+    addCards("玄学优化", FUNC, 2);   // 目标摸2张
+    addCards("卡评测机", FUNC, 1);   // 目标受1点不可闪避伤害
+    addCards("板子", FUNC, 1);       // 摸2张并回复1点体力
+    addCards("压轴题", FUNC, 1);     // 目标摸1张再弃1张
+    // ===== v3.0 新增锦囊牌: AOE / 反制 / 延时锦囊 / OI梗 =====
+    addCards("数据加强", FUNC, 2);          // 南蛮入侵: 全员出AC否则1伤
+    addCards("评测机抽风", FUNC, 2);        // 万箭齐发: 全员出WA否则1伤
+    addCards("CCF放水", FUNC, 1);           // 桃园结义: 全员回1
+    addCards("题解大会", FUNC, 1);          // 五谷丰登: 翻等同人数牌轮流选
+    addCards("特判", FUNC, 4);              // 无懈可击: 抵消锦囊效果
+    addCards("找代打", FUNC, 2);            // 借刀杀人: 令持械者攻击他人
+    addCards("链式前向星", FUNC, 2);        // 铁索连环: 横置传导伤害
+    addCards("UB", FUNC, 1);                // 闪电: 延时判定黑桃2~9受3伤
+    addCards("水群", FUNC, 2);              // 乐不思蜀: 延时非红桃跳过出牌
+    addCards("断网", FUNC, 2);              // 兵粮寸断: 延时非梅花跳过摸牌
+    addCards("代码审计", FUNC, 3);          // 火攻: 同花色弃牌造成1伤
+    // 新增彩蛋牌
+    addCards("面向数据编程", SPECIAL_EASTER, 1); // 所有存活角色各摸1张
+    addCards("随机种子", SPECIAL_EASTER, 1);     // 摸2张再随机弃1张
     addCards("女装求AC", SPECIAL_EASTER, 1);
     addCards("我样例过了！", SPECIAL_EASTER, 1);
     addCards("评测机崩溃", SPECIAL_EASTER, 1);
@@ -73,10 +116,16 @@ std::shared_ptr<Room> RoomManager::createRoom(int numPlayers, bool isPublic,
     }
     std::shuffle(identities.begin(), identities.end(), rng());
 
+    // v3.0: 19 种职业随机抽取
     std::vector<std::string> profs = {
         "萌新","蒟蒻","划水怪","神犇","毒瘤出题人",
-        "退役选手","金牌教练","女装大佬","传奇Au选手"
+        "退役选手","金牌教练","女装大佬","传奇Au选手",
+        "学长","评测姬","打表狂魔","玄学选手",
+        "键盘侠","抄题解选手","压线选手","水群怪","爆零选手","图灵奖得主"
     };
+    // 随机抽取 maxPlayers 个职业分配, 使19种职业都有机会登场
+    std::shuffle(profs.begin(), profs.end(), rng());
+    profs.resize(maxPlayers);
 
     for (int i = 0; i < maxPlayers; ++i) {
         Player p;
@@ -85,10 +134,12 @@ std::shared_ptr<Room> RoomManager::createRoom(int numPlayers, bool isPublic,
         p.identity = identities[i % identities.size()];
         p.profession = profs[i % profs.size()];
         int baseHp = 4;
-        if (p.profession == "毒瘤出题人" || p.profession == "女装大佬") baseHp = 3;
+        if (p.profession == "毒瘤出题人" || p.profession == "女装大佬" || p.profession == "评测姬" ||
+            p.profession == "水群怪" || p.profession == "图灵奖得主") baseHp = 3;
         else if (p.profession == "退役选手") baseHp = 5;
         p.max_hp = baseHp;
         p.hp = baseHp;
+        if (p.profession == "图灵奖得主") p.handLimitBonus = 1;  // 被动: 手牌上限+1
         if (p.identity == "Au选手") { p.max_hp += 1; p.hp = p.max_hp; }
         if (p.identity == "摸鱼怪") p.depression = 3;
         room->players.push_back(p);

@@ -143,9 +143,11 @@ public:
     int attackRange(Player& p);
     bool canAttack(int from, int to);
     void equipCard(Player& p, Card& c);
+    void loseArmorEffect(Player& p, Card& eq);  // 防具离场效果(AC保护/金牌保护/全员拉黑)
     int dealDamage(Player& source, Player& target, int dmg, bool isAttack, bool isCardEffect = false);
     void checkVictory();
     void clearPending();
+    void resolvePendingTimeout(); // 待响应超时自动结算, 防止游戏卡死
     void startResponse(const std::string& type, int target, std::vector<int> valid, json ctx);
     void checkAwakenings();
     void nextPhase();
@@ -165,4 +167,5 @@ public:
 std::mt19937& rng();
 int randInt(int low, int high);
 std::string randSuit();
+std::string suitEmoji(const std::string& s);  // 花色 -> ♠♣♥♦
 extern std::map<std::string, std::string> evoMap;

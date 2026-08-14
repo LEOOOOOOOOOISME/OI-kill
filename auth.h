@@ -35,6 +35,7 @@ struct Account {
     int gamesWon = 0;
     long long joinTime = 0;
     std::string lastLogin;
+    std::string easterUnlocked; // 已触发的彩蛋牌名, 逗号分隔 (卡片图鉴彩蛋解锁, #0816-4)
 };
 
 // 权限层级: banneduser < user < admin < superadmin
@@ -268,6 +269,29 @@ public:
         return out;
     }
 
+    // ---------- 彩蛋图鉴解锁 (#0816-4) ----------
+    // 玩家在游戏中抽到/使用某张彩蛋牌后解锁; 解锁信息按账号持久化
+    void unlockEaster(const std::string& username, const std::string& cardName) {
+        std::lock_guard<std::mutex> lock(mtx_);
+        Account* a = findUser(username);
+        if (!a || cardName.empty()) return;
+        std::string& set = a->easterUnlocked;
+        if (set.find(cardName) != std::string::npos) return;
+        if (!set.empty()) set += ",";
+        set += cardName;
+        save();
+    }
+    // 返回该用户已解锁的彩蛋牌名列表
+    std::vector<std::string> easterUnlocked(const std::string& username) {
+        std::lock_guard<std::mutex> lock(mtx_);
+        Account* a = findUser(username);
+        std::vector<std::string> out;
+        if (!a || a->easterUnlocked.empty()) return out;
+        std::vector<std::string> parts = sockutil::split(a->easterUnlocked, ',');
+        for (auto& p : parts) if (!p.empty()) out.push_back(p);
+        return out;
+    }
+
 private:
     Account* findUser(const std::string& u) {
         auto it = users_.find(u);
@@ -305,7 +329,7 @@ private:
         return t;
     }
 
-    // 持久化: 每行 format: id|username|salt|hash|role|banned|games|wins|joindata
+    // 持久化: 每行 format: id|username|salt|hash|role|banned|games|wins|joindata|easterUnlocked
     void save() {
         std::ofstream out(file_.c_str());
         if (!out) return;
@@ -313,7 +337,7 @@ private:
             Account& a = kv.second;
             out << a.id << "|" << a.username << "|" << a.salt << "|" << a.pwd_hash << "|"
                 << (int)a.role << "|" << (a.banned?1:0) << "|" << a.gamesPlayed << "|"
-                << a.gamesWon << "|" << a.lastLogin << "\n";
+                << a.gamesWon << "|" << a.lastLogin << "|" << a.easterUnlocked << "\n";
         }
         out.flush();
     }
@@ -334,6 +358,7 @@ private:
             a.gamesPlayed = atoi(p[6].c_str());
             a.gamesWon = atoi(p[7].c_str());
             a.lastLogin = p[8];
+            if (p.size() >= 10) a.easterUnlocked = p[9]; // 旧数据无此字段, 保持空
             users_[a.username] = a;
             if (a.id >= nextId_) nextId_ = a.id + 1;
         }

@@ -279,6 +279,14 @@ bool RoomManager::addPlayer(int id, const std::string& username,
     // 已在房间
     for (auto& p : room->players) if (p.name == username) return true;
 
+    // 防止同一玩家同时处于多个房间 (#0815-9)
+    for (auto& kv : rooms) {
+        if (kv.first == id) continue;
+        for (auto& p : kv.second->players) {
+            if (p.name == username) { err = "你已在其他房间中，请先退出再加入/创建"; return false; }
+        }
+    }
+
     // 检查密码 (私密)
     if (!info.isPublic && !info.password.empty() && info.password != password) {
         err = "密码错误"; return false;

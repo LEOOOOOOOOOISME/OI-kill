@@ -112,6 +112,9 @@ void WebServer::handleHttp(SOCKET s, HttpRequest& req) {
             std::string key = AuthManager::instance().sessionKey(token);
             json j;
             j["ok"] = true; j["username"] = user; j["role"] = role; j["key"] = key;
+            // 彩蛋图鉴解锁列表 (#0816-4)
+            j["easter_unlocked"] = json::array();
+            for (auto& nm : AuthManager::instance().easterUnlocked(user)) j["easter_unlocked"].push_back(nm);
             resp = buildHttpResponse(200, "application/json", j.dump());
         }
     }
@@ -182,12 +185,17 @@ void WebServer::handleHttp(SOCKET s, HttpRequest& req) {
             bool pub = form["pub"] != "false" && form["pub"] != "0";
             std::string pwd = form["pwd"];
             std::string name = form["name"];
-            std::shared_ptr<Room> r = mgr_->createRoom(num, pub, pwd, name, user);
-            std::string tmpErr;
-            mgr_->addPlayer(r->id, user, pwd, tmpErr);
-            json j; j["ok"]=true; j["room_id"]=r->id;
-            Logger::instance().action("创建 " + user + " 房间 #" + std::to_string(r->id) + " (" + std::to_string(num) + "人 " + (pub?"公开":"私密") + ")");
-            resp = buildHttpResponse(200, "application/json", j.dump());
+            // 防止一名玩家同时创建/处于多个房间 (#0815-9)
+            if (mgr_->roomOfPlayer(user) != -1) {
+                resp = buildHttpResponse(200, "application/json", "{\"ok\":false,\"msg\":\"你已在房间中，请先退出房间再创建\"}");
+            } else {
+                std::shared_ptr<Room> r = mgr_->createRoom(num, pub, pwd, name, user);
+                std::string tmpErr;
+                mgr_->addPlayer(r->id, user, pwd, tmpErr);
+                json j; j["ok"]=true; j["room_id"]=r->id;
+                Logger::instance().action("创建 " + user + " 房间 #" + std::to_string(r->id) + " (" + std::to_string(num) + "人 " + (pub?"公开":"私密") + ")");
+                resp = buildHttpResponse(200, "application/json", j.dump());
+            }
         }
     }
     else if (req.path == "/api/join_room" && req.method == "POST") {
@@ -390,8 +398,22 @@ void WebServer::handleWebSocket(SOCKET s, HttpRequest& req) {
     gs.sock = s;
     gs.token = token;
     gs.username = user;
+    gs.key = key;
     {
         std::lock_guard<std::mutex> lk(sessionsMtx_);
+        // 顶号 (#0816-9): 同一账号已有活跃连接时, 先通知旧连接并踢掉
+        for (auto it = gameSessions_.begin(); it != gameSessions_.end(); ++it) {
+            GameSession* old = *it;
+            if (old->active && old->username == user && old->sock != s) {
+                // 用旧连接缓存的密钥发送, 保证旧端可解密
+                wsSend(old->sock, encryptText(old->key, "{\"type\":\"kicked\",\"msg\":\"你的账号已在其他设备登录，你已被强制下线\"}"));
+                old->active = false;
+                closesocket(old->sock);
+                gameSessions_.erase(it);
+                Logger::instance().action("顶号: " + user + " 在另一设备登录, 旧连接被强制下线");
+                break;
+            }
+        }
         gameSessions_.insert(&gs);
     }
 
@@ -402,6 +424,19 @@ void WebServer::handleWebSocket(SOCKET s, HttpRequest& req) {
             wsSend(s, encryptText(key, "{\"type\":\"error\",\"msg\":\"账号已被封禁\"}"));
             break;
         }
+        // 顶号检查 (#0816-9): 本会话 token 已被新登录踢掉 → 强制下线并提示
+        if (AuthManager::instance().usernameForToken(token) != user) {
+            wsSend(s, encryptText(key, "{\"type\":\"kicked\",\"msg\":\"你的账号已在其他设备登录，你已被强制下线\"}"));
+            break;
+        }
+        // 用 select 做 1 秒轮询: 既能及时检测封禁/顶号, 又不会因接收超时导致闲置掉线(#3)
+        fd_set rfds;
+        FD_ZERO(&rfds);
+        FD_SET(s, &rfds);
+        timeval tv; tv.tv_sec = 1; tv.tv_usec = 0;
+        int sel = select(0, &rfds, NULL, NULL, &tv);
+        if (sel < 0) break;       // socket 出错 → 断开
+        if (sel == 0) continue;   // 超时 → 回到循环顶部检查封禁/顶号
         std::string payload; bool needClose=false;
         if (!wsRecv(s, payload, needClose)) break;
         if (needClose) break;
@@ -457,10 +492,20 @@ void WebServer::handleWebSocket(SOCKET s, HttpRequest& req) {
             else if (type == "leave_room") {
                 if (gs.roomId >= 0) {
                     int leftRoom = gs.roomId;
-                    mgr_->removePlayer(leftRoom, user);
+                    bool isHost = false;
+                    {
+                        std::lock_guard<std::mutex> lk(mgr_->mtx);
+                        if (mgr_->roomInfos.count(leftRoom) && mgr_->roomInfos[leftRoom].host == user) isHost = true;
+                    }
+                    if (isHost) {
+                        // 房主退出 → 关闭房间并告知其他玩家 (#0815-9)
+                        closeRoomAndNotify(leftRoom, user);
+                    } else {
+                        mgr_->removePlayer(leftRoom, user);
+                        closeRoomIfEmpty(leftRoom);   // 房间空无一人时一并关闭
+                        broadcastToRoomState(leftRoom);
+                    }
                     gs.roomId = -1;
-                    // 通知房间内其他玩家刷新状态
-                    broadcastToRoomState(leftRoom);
                 }
                 wsSend(s, encryptText(key, "{\"type\":\"end\",\"msg\":\"已退出房间\"}"));
             }
@@ -500,21 +545,32 @@ void WebServer::handleWebSocket(SOCKET s, HttpRequest& req) {
                                                   std::to_string(mgr_->roomInfos[gs.roomId].playerLimit) +
                                                   "），满员后游戏开始";
                             } else if (type == "use_card") {
-                                                        int idx = j.value("card_index",-1);
-                                std::vector<int> targets;
-                                if (j.contains("targets") && j.at("targets").is_array()) {
-                                    json tar = j.at("targets");
-                                    for (size_t i=0;i<tar.size();++i) targets.push_back((int)tar[i]);
+                                // 回合归属校验 (#0815-1: 防止非当前玩家/非出牌阶段出牌)
+                                if (room->currentTurn != gs.playerId) { result["error"] = "还没轮到你出牌"; }
+                                else if (room->phase != Room::PLAY) { result["error"] = "当前不是出牌阶段"; }
+                                else if (room->pending) { result["error"] = "请先处理需要响应的操作"; }
+                                else {
+                                    int idx = j.value("card_index",-1);
+                                    std::vector<int> targets;
+                                    if (j.contains("targets") && j.at("targets").is_array()) {
+                                        json tar = j.at("targets");
+                                        for (size_t i=0;i<tar.size();++i) targets.push_back((int)tar[i]);
+                                    }
+                                    room->useCard(gs.playerId, idx, targets, result);
                                 }
-                                room->useCard(gs.playerId, idx, targets, result);
                             } else if (type == "response") {
                                 room->processResponse(gs.playerId, j, result);
                             } else if (type == "use_skill") {
-                                // 主动技能: 神犇AKIOI / 毒瘤出原题 / 女装直播
-                                std::string skill = j.value("skill", std::string(""));
-                                room->useSkill(gs.playerId, skill, j, result);
+                                // 主动技能: 神犇AKIOI / 毒瘤出原题 / 女装直播 等
+                                if (room->currentTurn != gs.playerId) { result["error"] = "还没轮到你使用技能"; }
+                                else if (room->phase != Room::PLAY) { result["error"] = "当前不是出牌阶段"; }
+                                else if (room->pending) { result["error"] = "请先处理需要响应的操作"; }
+                                else {
+                                    std::string skill = j.value("skill", std::string(""));
+                                    room->useSkill(gs.playerId, skill, j, result);
+                                }
                             } else if (type == "skip_phase" || type == "end_turn") {
-                                if (room->currentTurn == gs.playerId && room->phase == Room::PLAY) {
+                                if (room->currentTurn == gs.playerId && room->phase == Room::PLAY && !room->pending) {
                                     room->phase = Room::DISCARD; room->nextPhase();
                                 }
                             }
@@ -535,7 +591,21 @@ void WebServer::handleWebSocket(SOCKET s, HttpRequest& req) {
     }
 
     // 清理连接
-    if (gs.roomId >= 0) mgr_->removePlayer(gs.roomId, user);
+    if (gs.roomId >= 0) {
+        int leftRoom = gs.roomId;
+        bool isHost = false;
+        {
+            std::lock_guard<std::mutex> lk(mgr_->mtx);
+            if (mgr_->roomInfos.count(leftRoom) && mgr_->roomInfos[leftRoom].host == user) isHost = true;
+        }
+        if (isHost) {
+            // 房主断线 → 关闭房间并告知 (#0815-9)
+            closeRoomAndNotify(leftRoom, user);
+        } else {
+            mgr_->removePlayer(leftRoom, user);
+            closeRoomIfEmpty(leftRoom);
+        }
+    }
     {
         std::lock_guard<std::mutex> lk(sessionsMtx_);
         gameSessions_.erase(&gs);
@@ -543,13 +613,52 @@ void WebServer::handleWebSocket(SOCKET s, HttpRequest& req) {
 }
 
 
+// 房主退出/断线时: 关闭房间并通知房间内所有玩家 (#0815-9 #0816-5)
+void WebServer::closeRoomAndNotify(int roomId, const std::string& hostName) {
+    {
+        std::lock_guard<std::mutex> lk(sessionsMtx_);
+        for (std::set<GameSession*>::iterator it = gameSessions_.begin(); it != gameSessions_.end(); ++it) {
+            GameSession* gs = *it;
+            if (gs->roomId == roomId && gs->active) {
+                json j;
+                j["type"] = "room_closed";
+                // 房主本人: 人称转换, 提示"已回到大厅"; 其他玩家: 提示房主已退出
+                if (gs->username == hostName)
+                    j["msg"] = "你已退出房间，已回到大厅";
+                else
+                    j["msg"] = "房主 " + hostName + " 已退出，房间已关闭，已回到大厅";
+                std::string key = gs->key; // 使用连接时缓存的密钥
+                wsSend(gs->sock, encryptText(key, j.dump()));
+                gs->roomId = -1;
+                gs->playerId = -1;
+            }
+        }
+    }
+    mgr_->closeRoom(roomId);
+    Logger::instance().action("房主 " + hostName + " 退出, 关闭房间 #" + std::to_string(roomId));
+}
+
+// 房间已无任何玩家时自动关闭
+void WebServer::closeRoomIfEmpty(int roomId) {
+    bool empty = true;
+    {
+        std::lock_guard<std::mutex> lk(mgr_->mtx);
+        if (mgr_->rooms.count(roomId)) {
+            for (auto& p : mgr_->rooms[roomId]->players) {
+                if (p.name != "等待加入") { empty = false; break; }
+            }
+        }
+    }
+    if (empty) mgr_->closeRoom(roomId);
+}
+
 void WebServer::broadcastToRoom(int roomId, const std::string& payload, int exceptPid) {
     std::lock_guard<std::mutex> lk(sessionsMtx_);
     for (std::set<GameSession*>::iterator it = gameSessions_.begin(); it != gameSessions_.end(); ++it) {
         GameSession* gs = *it;
         if (gs->roomId == roomId && gs->playerId != exceptPid && gs->active) {
             std::lock_guard<std::mutex> sl(gs->mtx);
-            std::string key = AuthManager::instance().sessionKey(gs->token);
+            std::string key = gs->key; // 使用连接时缓存的密钥
             wsSend(gs->sock, encryptText(key, payload));
         }
     }
@@ -563,7 +672,7 @@ void WebServer::broadcastToLobby(const std::string& payload) {
         GameSession* gs = *it;
         if (gs->active) {
             std::lock_guard<std::mutex> sl(gs->mtx);
-            std::string key = AuthManager::instance().sessionKey(gs->token);
+            std::string key = gs->key; // 使用连接时缓存的密钥
             wsSend(gs->sock, encryptText(key, payload));
         }
     }
@@ -578,7 +687,7 @@ void WebServer::broadcastToRoomState(int roomId) {
         for (std::set<GameSession*>::iterator it = gameSessions_.begin(); it != gameSessions_.end(); ++it) {
             GameSession* gs = *it;
             if (gs->roomId == roomId && gs->active) {
-                std::string key = AuthManager::instance().sessionKey(gs->token);
+                std::string key = gs->key; // 使用连接时缓存的密钥
                 targets.push_back(std::make_pair(gs->sock, key));
             }
         }
@@ -603,6 +712,12 @@ void WebServer::broadcastToRoomState(int roomId) {
         int pid = sock2pid.count(s) ? sock2pid[s] : 0;
                 json st = room->getStateJson(pid);
         st["type"] = "state";
+        // 房间元信息: 名称/是否已开始 (#0816-6 #0816-7)
+        if (mgr_->roomInfos.count(roomId)) {
+            st["room_name"] = mgr_->roomInfos[roomId].name;
+            st["room_host"] = mgr_->roomInfos[roomId].host;
+            st["started"] = mgr_->roomInfos[roomId].started;
+        }
         wsSend(s, encryptText(key, st.dump()));
     }
 }

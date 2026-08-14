@@ -27,6 +27,7 @@ struct GameSession {
     SOCKET sock;
     std::string token;
     std::string username;
+    std::string key;      // 连接时缓存的 XOR 密钥 (顶号通知等场景仍需加密)
     int roomId = -1;
     int playerId = -1;
     std::mutex mtx;
@@ -56,6 +57,8 @@ private:
     void broadcastToRoom(int roomId, const std::string& payload, int exceptPid = -1);
     void broadcastToLobby(const std::string& payload);
     void broadcastToRoomState(int roomId);
+    void closeRoomAndNotify(int roomId, const std::string& hostName);
+    void closeRoomIfEmpty(int roomId);
     void removeSession(GameSession* gs);
     void delConn(SOCKET s);
     bool adminAllowed(const sockutil::HttpRequest& req);

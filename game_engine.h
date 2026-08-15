@@ -104,6 +104,15 @@ struct Player {
     bool skipDraw = false;            // 断网: 本回合跳过摸牌阶段
     bool coffeeUsedThisTurn = false;  // BUG-140: 咖啡濒死自救每回合限1次
     int acBaoHuCount = 0;             // BUG-129: AC保护触发次数(进化金牌保护: 3次)
+    // ===== 进化条件计数 (一致性修复: 需求第十章) =====
+    int streakDmg = 0;                // 线段树: 装备后连续自己回合造成伤害计数(主席树: 3次)
+    int streakAcUse = 0;              // 评测机连发: 装备后连续自己回合使用做法假了计数(超频: 3次)
+    int adminHitCount = 0;            // 管理员权限: 无视防具命中累计(root权限: 2次)
+    int xuanxueJudgeCount = 0;        // 玄学判题: 判定成功累计(玄学大师: 2次)
+    int blacklistBlockCount = 0;      // 黑名单: 防住黑色做法假了累计(全员拉黑: 2次)
+    int unionFindBlockCount = 0;      // 并查集: 成功抵消杀计数(路径压缩: 1次)
+    bool coffeeUsedPlayPhase = false; // 咖啡: 出牌阶段已使用(浓缩咖啡: 使用后本回合造成过伤害)
+    int extraEvo = 0;                 // 系统重构: 本回合可额外进化次数
 };
 
 struct Pending {
@@ -177,6 +186,13 @@ public:
     void resolveAcRemaining(int attacker, const json& ctx);  // BUG-109: WA响应后继续多目标攻击剩余目标
     bool hasDelayCard(int pid, const std::string& name);      // BUG-105: 判定区是否已有指定延时锦囊
     bool triggerEaster(Player& p, Card& c);                    // BUG-121: 彩蛋牌抽到即直接触发效果
+    // ===== 特判门 (需求 9.3/Q13: 普通锦囊可被目标用特判抵消) =====
+    bool tjResume = false;            // 特判询问结束后恢复原锦囊执行
+    std::set<int> tjCountered;        // 已用特判抵消的目标
+    int tjOwner = -1;                 // 被拦截锦囊的使用者
+    int tjCardIdx = -1;               // 被拦截锦囊的手牌索引
+    std::vector<int> tjTargets;       // 受影响目标
+    int tjAskPos = -1;                // 当前询问到 tjTargets 的位置
 };
 
 std::mt19937& rng();

@@ -688,14 +688,23 @@ function render(){
     else if(t==='WAIT_O2_TARGET'){ p='O2优化！选择攻击目标(点击玩家)'; selectedTarget=null; }
     else if(t==='WAIT_LIVE_TARGET'){ p='选择要偷取的手牌: '+handBtns(state.pending.hand_info); }
     else if(t==='WAIT_DUEL_SELF'){ p='对拍！请打出【做法假了】: '+state.pending.valid_cards.map(cardBtn).join(''); }
-    else if(t==='WAIT_EXAM_AC'){ p='模拟赛！请打出【做法假了】应对: '+state.pending.valid_cards.map(cardBtn).join('')+' <button class="btn red" onclick="respond(-1)">放弃(受1伤)</button>'; }
+    else if(t==='WAIT_DUEL_TARGET'){ let dd=state.pending.context.duel_dmg||1; p='对拍！对方打出了【做法假了】，请应战: '+state.pending.valid_cards.map(cardBtn).join('')+' <button class="btn red" onclick="respond(-1)">放弃(受'+dd+'伤)</button>'; }
+    else if(t==='WAIT_EXAM_AC'){ let hasTj=(state.my_hand||[]).some(h=>h.name==='特判'||h.name==='一票否决'); p='模拟赛！请打出【做法假了】应对: '+state.pending.valid_cards.map(cardBtn).join('')+(hasTj?' <button class="btn" onclick="respond(-3)">⚖️ 特判抵消</button>':'')+' <button class="btn red" onclick="respond(-1)">放弃(受1伤)</button>'; }
     else if(t==='WAIT_JUDGE_COLOR'){ p='手动测评：将下一次判定花色强制为 <button class="btn" onclick="judgeColor(\'red\')">♥ 红色</button> <button class="btn" onclick="judgeColor(\'black\')">♠ 黑色</button>'; }
-    else if(t==='AOE_AC'){ p='【数据加强】请打出【做法假了】应对: '+state.pending.valid_cards.map(cardBtn).join('')+' <button class="btn red" onclick="respond(-1)">放弃(受1伤)</button>'; }
-    else if(t==='AOE_WA'){ p='【评测机抽风】请打出【WA】应对: '+state.pending.valid_cards.map(cardBtn).join('')+' <button class="btn red" onclick="respond(-1)">放弃(受1伤)</button>'; }
+    else if(t==='AOE_AC'){ let hasTj=(state.my_hand||[]).some(h=>h.name==='特判'||h.name==='一票否决'); p='【数据加强】请打出【做法假了】应对: '+state.pending.valid_cards.map(cardBtn).join('')+(hasTj?' <button class="btn" onclick="respond(-3)">⚖️ 特判抵消</button>':'')+' <button class="btn red" onclick="respond(-1)">放弃(受1伤)</button>'; }
+    else if(t==='AOE_WA'){ let hasTj=(state.my_hand||[]).some(h=>h.name==='特判'||h.name==='一票否决'); p='【评测机抽风】请打出【WA】应对: '+state.pending.valid_cards.map(cardBtn).join('')+(hasTj?' <button class="btn" onclick="respond(-3)">⚖️ 特判抵消</button>':'')+' <button class="btn red" onclick="respond(-1)">放弃(受1伤)</button>'; }
     else if(t==='WAIT_AUDIT_REVEAL'){ p='【代码审计】请选择要展示的手牌: '+handBtns(state.pending.hand_info); }
     else if(t==='WAIT_HARVEST'){ p='【题解大会】请选择1张题解: '+(state.pending.context.harvest_cards||[]).map((n,i)=>'<button class="btn" onclick="respond('+i+')">'+esc(n)+'</button>').join('')+' <button class="btn red" onclick="respond(-1)">放弃(随机)</button>'; }
     else if(t==='WAIT_CHAOTIJIE'){ p='【抄题解】请选择要取的牌: '+(state.pending.context.cards||[]).map((n,i)=>'<button class="btn" onclick="respond('+i+')">'+esc(n)+'</button>').join('')+' <button class="btn red" onclick="respond(-1)">放弃</button>'; }
     else if(t==='WAIT_DEPRESSION'){ p='颓废标记：<button class="btn" onclick="depression(\'heal\')">回复1体力</button> <button class="btn" onclick="depression(\'draw\')">摸2牌</button> <button class="btn red" onclick="depression(\'none\')">不使用</button>'; }
+    // ===== 一致性修复: 补齐缺失的响应类型按钮 =====
+    else if(t==='WAIT_FORCE_HIT'){ let w=state.pending.context.weapon||''; let cost=state.pending.context.cost||1; p='【'+esc(w)+'】攻击被WA抵消！是否弃 '+cost+' 张手牌强制命中? <button class="btn gold" onclick="forceHit(true)">弃'+cost+'张强制命中</button> <button class="btn red" onclick="forceHit(false)">放弃</button>'; }
+    else if(t==='WAIT_BU_SI_XIN'){ p='【不死心】攻击被WA抵消！是否再打出一张【做法假了】追击? <button class="btn gold" onclick="forceHit(true)">再打1张追击</button> <button class="btn red" onclick="forceHit(false)">放弃</button>'; }
+    else if(t==='WAIT_DAIDANG_WA'){ let hasTj=(state.my_hand||[]).some(h=>h.name==='特判'||h.name==='一票否决'); p='【找代打】你被指定为攻击目标！打出【WA】闪避: '+state.pending.valid_cards.map(cardBtn).join('')+(hasTj?' <button class="btn" onclick="respond(-3)">⚖️ 特判抵消</button>':'')+' <button class="btn red" onclick="respond(-1)">放弃(受1伤)</button>'; }
+    else if(t==='WAIT_TJ'){ let cn=state.pending.context.card_name||'锦囊'; let hasTj=(state.my_hand||[]).some(h=>h.name==='特判'||h.name==='一票否决'); p='【'+esc(cn)+'】正在结算！是否使用【特判】抵消对自己效果? '+(hasTj?'<button class="btn" onclick="respond(-3)">⚖️ 使用特判抵消</button>':'')+' <button class="btn red" onclick="respond(-1)">不抵消</button>'; }
+    else if(t==='WAIT_COLD_DATA'){ p='【冷数据】命中！是否防止伤害，改为弃置目标2张牌? <button class="btn gold" onclick="coldData(true)">弃2张牌</button> <button class="btn red" onclick="coldData(false)">正常造成伤害</button>'; }
+    else if(t==='WAIT_MODUI'){ p='【莫队算法】命中！可额外攻击一名可攻击目标(点击玩家)，或 <button class="btn red" onclick="send({type:\'response\',force:false})">不额外攻击</button>'; }
+    else if(t==='WAIT_SUIYUAN'){ p='【随缘】选择摸牌方式: <button class="btn" onclick="suiyuan(\'suiyuan\')">摸1+弃牌堆1基本</button> <button class="btn" onclick="suiyuan(\'draw2\')">摸2张</button>'; }
     else p='等待响应...';
     pd.innerHTML='<div class="ptitle">🎯 需要你的响应</div>'+p;
   } else {
@@ -894,6 +903,9 @@ let baoLingMode='discard';
 function setBaoLingMode(m){ baoLingMode=m; render(); }
 function judgeColor(c){ send({type:'response',color:c}); }
 function depression(c){ send({type:'response',choice:c}); }
+function forceHit(f){ send({type:'response',force:f}); }      // 强制命中/不死心 (一致性修复)
+function coldData(f){ send({type:'response',force:f}); }      // 冷数据 (一致性修复)
+function suiyuan(c){ send({type:'response',choice:c}); }      // 划水怪随缘 (一致性修复)
 // 无需选择目标、点击即可打出的牌 (装备同理); 神犇的黑色手牌默认当【做法假了】攻击, 仍需选目标
 const NO_TARGET_CARDS=['摸鱼','重构','骗分','申诉','板子','手动测评','O2优化','评测机崩溃','我样例过了！','原题大战','退役失败','面向数据编程','随机种子','CCF捐款','咖啡','数据加强','评测机抽风','CCF放水','题解大会','女装直播','UB'];
 function pickCard(i){
@@ -913,6 +925,7 @@ let daidangTargets=null;
 function pickTarget(id){
   if(state.pending&&state.pending.type==='WAIT_O2_TARGET'){send({type:'response',targets:[id]});return;}
   if(state.pending&&state.pending.type==='WAIT_PUBLIC_EXEC'){send({type:'response',targets:[id]});return;}
+  if(state.pending&&state.pending.type==='WAIT_MODUI'){send({type:'response',force:true,targets:[id]});return;}  // 莫队算法额外攻击 (一致性修复)
   if(skillTargetMode){ let extra={}; if(skillTargetMode==='baoling') extra.mode=baoLingMode; send({type:'use_skill',skill:skillTargetMode,targets:[id],...extra}); skillTargetMode=null; render(); return; }
   if(selectedCard===null) return;
   // BUG-301: 找代打需要 2 个目标 (先选持械角色, 再选攻击目标)
@@ -922,8 +935,13 @@ function pickTarget(id){
     send({type:'use_card',card_index:selectedCard,targets:[daidangTargets[0],id]});
     daidangTargets=null; selectedCard=null; render(); return;
   }
-  // BUG-303: 多目标攻击卡(放手一搏/AK全场实锤) - 连续点击目标, 再次点击自己或结束确认
-  let isMulti = (cardName==='放手一搏') || (cardName==='实锤' && state.ak_all_active);
+  // BUG-303: 多目标攻击卡(放手一搏/AK全场) - 连续点击目标, 再次点击自己或结束确认
+  // 一致性修复: 服务器已下发 ak_all_active, AK全场时任意攻击牌(含碾压黑色牌/实锤)均可多目标
+  let me=state.players&&state.players[myId];
+  let isShenC=me&&me.profession==='神犇';
+  let isBlackC=(state.my_hand[selectedCard].suit==='spade'||state.my_hand[selectedCard].suit==='club');
+  let isEqC=(state.my_hand[selectedCard].type>=3&&state.my_hand[selectedCard].type<=6);
+  let isMulti = (cardName==='放手一搏') || (state.ak_all_active && (cardName==='做法假了'||cardName==='实锤'||(isShenC&&isBlackC&&!isEqC)));
   if(isMulti){
     if(!window.multiTargets) window.multiTargets=[];
     if(window.multiTargets.indexOf(id)<0) window.multiTargets.push(id);

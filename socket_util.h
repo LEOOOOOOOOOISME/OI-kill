@@ -218,7 +218,9 @@ inline bool parseHttpRequest(SOCKET s, HttpRequest& req) {
         }
     }
     long contentLength = 0;
+    int headerCount = 0;   // BUG-207: 限制头部数量, 防轻量DoS
     while (recvLine(s, line)) {
+        if (++headerCount > 64) return false;   // 头部超过64行直接拒绝
         if (line.empty()) break;
         size_t colon = line.find(':');
         if (colon == std::string::npos) continue;
@@ -326,6 +328,8 @@ inline bool wsRecv(SOCKET s, std::string& out, bool& needClose) {
         if (!recvExact(s, (char*)h, 2)) return false;
         int opcode = h[0] & 0x0F;
         bool masked = h[1] & 0x80;
+        // BUG-206 修复: RFC6455 要求客户端帧必须掩码; 未掩码的数据帧拒绝
+        if (!masked && opcode == 1) return false;
         unsigned long long len = h[1] & 0x7F;
         if (len == 126) { unsigned char b[2]; if(!recvExact(s,(char*)b,2)) return false; len = (b[0]<<8)|b[1]; }
         else if (len == 127) { unsigned char b[8]; if(!recvExact(s,(char*)b,8)) return false; len=0; for(int i=0;i<8;++i) len=(len<<8)|b[i]; }

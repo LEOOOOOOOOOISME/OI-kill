@@ -119,6 +119,20 @@ void WebServer::handleHttp(SOCKET s, HttpRequest& req) {
         }
     }
     else if (req.path == "/api/login" && req.method == "POST") {
+        // BUG-203: 简单登录限速 - 1秒窗口内最多10次尝试 (防止暴力破解)
+        static std::mutex lm;
+        static std::map<SOCKET,std::chrono::steady_clock::time_point> lastLogin;
+        static std::map<SOCKET,int> loginCount;
+        {
+            std::lock_guard<std::mutex> g2(lm);
+            auto now = std::chrono::steady_clock::now();
+            if (lastLogin.count(s) && now - lastLogin[s] > std::chrono::seconds(1)) loginCount[s] = 0;
+            if (++loginCount[s] > 10) {
+                resp = buildHttpResponse(429, "application/json", "{\"ok\":false,\"msg\":\"尝试过于频繁，请稍后再试\"}");
+                return;
+            }
+            lastLogin[s] = now;
+        }
         std::string u = req.query["u"].empty()?req.body:req.query["u"];
         // 处理登录请求
         std::string username, password;
@@ -516,6 +530,9 @@ void WebServer::handleWebSocket(SOCKET s, HttpRequest& req) {
                 if (text.size() > 200) text = text.substr(0, 200);
                 text = trim(text);
                 if (text.empty()) continue;
+                // BUG-211 修复: scope 校验 - 房间消息需已在房间; 未在房间时强制 lobby
+                if (scope != "room" && scope != "lobby") scope = "lobby";
+                if (scope == "room" && gs.roomId < 0) scope = "lobby";
                 json chat;
                 chat["type"] = "chat";
                 chat["scope"] = scope;
@@ -580,6 +597,11 @@ void WebServer::handleWebSocket(SOCKET s, HttpRequest& req) {
                     if (result.contains("error")) {
                         std::string errMsg = result.value("error", std::string("操作失败"));
                         wsSend(s, encryptText(key, "{\"type\":\"error\",\"msg\":\"" + errMsg + "\"}"));
+                    }
+                    // BUG-144 修复: 树状数组看牌结果直接发给操作者
+                    if (result.contains("view_hand")) {
+                        json vh = {{"type", "view_hand"}, {"view", result["view_hand"]}};
+                        wsSend(s, encryptText(key, vh.dump()));
                     }
                     // 释放 mgr_->mtx 后再广播状态, 避免 self-deadlock
                     broadcastToRoomState(gs.roomId);

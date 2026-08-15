@@ -33,6 +33,12 @@ struct Card {
 };
 
 struct Player {
+    // BUG-001: equip 为 unique_ptr 容器 → Player 不可拷贝, 提供移动语义 (room_manager push_back 需要)
+    Player() = default;
+    Player(const Player&) = delete;
+    Player& operator=(const Player&) = delete;
+    Player(Player&&) = default;
+    Player& operator=(Player&&) = default;
     int id = 0;
     std::string name;
     std::string identity;     // Au选手 Ag选手 反贼 摸鱼怪
@@ -41,7 +47,7 @@ struct Player {
     bool alive = true;
     int depression = 0;             // 颓废标记
     std::vector<Card> hand;
-    std::vector<Card> equip;
+    std::vector<std::unique_ptr<Card>> equip;   // unique_ptr: 堆上地址稳定, 扩容/删除不悬垂 (BUG-001)
     Card* weapon = nullptr;
     Card* armor = nullptr;
     Card* mount_off = nullptr;
@@ -96,6 +102,8 @@ struct Player {
     bool yunDuanUsed = false;         // 冷数据已用(每次攻击结算用一次)
     bool acBaoHuTriggered = false;    // AC保护: 本回合是否已触发
     bool skipDraw = false;            // 断网: 本回合跳过摸牌阶段
+    bool coffeeUsedThisTurn = false;  // BUG-140: 咖啡濒死自救每回合限1次
+    int acBaoHuCount = 0;             // BUG-129: AC保护触发次数(进化金牌保护: 3次)
 };
 
 struct Pending {
@@ -131,6 +139,10 @@ public:
     std::string aoeType = "";          // AOE结算: 数据加强 / 评测机抽风
     int aoeBaseDmg = 1;                // AOE结算: 伤害基数(进化后=2)
     bool aoeActive = false;            // AOE结算进行中
+    std::vector<int> harvestPlayers;   // BUG-122: 题解大会选牌玩家顺序
+    int harvestStart = 0;
+    int harvestStep = 0;
+    std::vector<Card> harvestCards;    // 题解大会剩余可选牌
 
     Player& getPlayer(int pid);
     bool isAlive(int pid) const;
@@ -162,6 +174,9 @@ public:
     void stepAoe();
     void judgeDelayArea(Player& p);   // 结算一名角色的判定区延时锦囊
     bool canUseWA(Player& p);         // 判断能否使用WA(含玄学判题/并查集)
+    void resolveAcRemaining(int attacker, const json& ctx);  // BUG-109: WA响应后继续多目标攻击剩余目标
+    bool hasDelayCard(int pid, const std::string& name);      // BUG-105: 判定区是否已有指定延时锦囊
+    bool triggerEaster(Player& p, Card& c);                    // BUG-121: 彩蛋牌抽到即直接触发效果
 };
 
 std::mt19937& rng();

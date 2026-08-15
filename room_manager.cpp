@@ -142,7 +142,7 @@ std::shared_ptr<Room> RoomManager::createRoom(int numPlayers, bool isPublic,
         if (p.profession == "图灵奖得主") p.handLimitBonus = 1;  // 被动: 手牌上限+1
         if (p.identity == "Au选手") { p.max_hp += 1; p.hp = p.max_hp; }
         if (p.identity == "摸鱼怪") p.depression = 3;
-        room->players.push_back(p);
+        room->players.push_back(std::move(p));   // BUG-001: Player 含 unique_ptr, 需移动
     }
 
     // 发初始手牌 (每人4张)
@@ -153,7 +153,8 @@ std::shared_ptr<Room> RoomManager::createRoom(int numPlayers, bool isPublic,
     room->currentTurn = 0;
     room->roundCount = 1;
     room->phase = Room::ROUND_START;
-    room->nextPhase();
+    // BUG-209 修复: 不在创建时推进回合 (未满员会挂出异常pending/摸牌), 由满员 resetForStart 启动
+    // room->nextPhase();
 
     rooms[room->id] = room;
 
@@ -163,7 +164,7 @@ std::shared_ptr<Room> RoomManager::createRoom(int numPlayers, bool isPublic,
     info.isPublic = isPublic;
     info.playerLimit = maxPlayers;
     info.name = name.empty() ? ("房间#" + std::to_string(room->id)) : name;
-    info.password = isPublic ? "" : password;
+    info.password = password;   // 修复: 公开房间也可设密码 (留空=无密码); 私密房间密码必填
     info.host = host;
     roomInfos[room->id] = info;
 
@@ -217,6 +218,7 @@ json RoomManager::getLobbyRooms() {
         rj["id"] = room->id;
         rj["name"] = info.name;
         rj["is_public"] = true;
+        rj["has_password"] = !info.password.empty();   // 前端据此决定是否弹密码框
         rj["player_limit"] = info.playerLimit;
         int joined = 0;
         for (auto& p : room->players) if (p.name != "等待加入") joined++;
@@ -287,8 +289,8 @@ bool RoomManager::addPlayer(int id, const std::string& username,
         }
     }
 
-    // 检查密码 (私密)
-    if (!info.isPublic && !info.password.empty() && info.password != password) {
+    // 检查密码 (公开房间也可设密码; 密码为空则无需校验)
+    if (!info.password.empty() && info.password != password) {
         err = "密码错误"; return false;
     }
 
@@ -317,10 +319,24 @@ bool RoomManager::removePlayer(int id, const std::string& username) {
     std::shared_ptr<Room> room = rooms[id];
     for (auto& p : room->players) {
         if (p.name == username) {
-            // 重置槽位为初始状态, 避免后续加入的玩家继承上一名玩家的手牌/装备
-            // (修复 bug#7 相关的"发牌异常": 离场后重新加入会看到别人的牌)
+            // BUG-004 修复: 游戏已开始后退出 → 视为阵亡(弃置牌, 退出对局), 不留"幽灵玩家"
+            if (roomInfos[id].started && !room->gameOver) {
+                for (auto& c : p.hand) room->discard.push_back(c);
+                p.hand.clear();
+                for (auto& eq : p.equip) room->discard.push_back(*eq);
+                p.equip.clear();
+                p.weapon = p.armor = p.mount_off = p.mount_def = nullptr;
+                p.delayArea.clear();
+                p.alive = false;
+                p.name = username + "(已退出)";
+                p.hp = 0;
+                room->checkVictory();
+                room->addLog(p.name + " 中途退出, 视为阵亡");
+                return true;
+            }
+            // 未开局退出: 重置槽位为初始状态, 避免后续加入的玩家继承上一名玩家的手牌/装备
             p.name = "等待加入";
-            for (auto& eq : p.equip) room->discard.push_back(eq);
+            for (auto& eq : p.equip) room->discard.push_back(*eq);
             p.equip.clear();
             p.weapon = p.armor = p.mount_off = p.mount_def = nullptr;
             p.hand.clear();
@@ -345,8 +361,8 @@ bool RoomManager::removePlayer(int id, const std::string& username) {
             p.usedKangThisTurn = false;
             p.usedSkillsThisTurn.clear();
             p.bossDmgBoost = false;
-            // 重新发4张初始手牌
-            for (int i = 0; i < 4; ++i) p.hand.push_back(room->drawCard());
+            // BUG-210 修复: 不重新发牌 (等满员后 resetForStart 统一发放, 避免牌堆凭空减少)
+            // for (int i = 0; i < 4; ++i) p.hand.push_back(room->drawCard());
             return true;
         }
     }

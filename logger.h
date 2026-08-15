@@ -72,6 +72,9 @@ public:
     // 读取某个日志文件内容
     std::string readFile(const std::string& name) {
         std::lock_guard<std::mutex> lock(mtx_);
+        // BUG-201: 防路径遍历 - 只允许纯日志文件名
+        if (name.find("\\") != std::string::npos || name.find('/') != std::string::npos ||
+            name.find("..") != std::string::npos || name.find(':') != std::string::npos) return "";
         std::string full = dir_ + "\\" + name;
         std::ifstream in(full.c_str(), std::ios::binary);
         if (!in) return "";

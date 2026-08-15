@@ -413,7 +413,7 @@ function toggleTupu(){
   if(a) a.textContent='▾';
 }
 function buildTupu(b){
-  let groups={ '🂠 基本牌':['做法假了','WA','CCF捐款','咖啡'], '✨ 进化牌':['实锤','样例全过','CCF金牌','浓缩咖啡','数据爆炸','评测机暴走','一票否决','模板库','评测机超频','root权限','剪枝优化','玄学大师','全员拉黑','金牌保护'],
+  let groups={ '🂠 基本牌':['做法假了','WA','CCF捐款','咖啡'], '✨ 进化牌':['实锤','样例全过','CCF金牌','WC对决','暴力抄袭','退学警告','O3优化','主席树','路径压缩','系统重构','浓缩咖啡','数据爆炸','评测机暴走','一票否决','模板库','评测机超频','root权限','剪枝优化','玄学大师','全员拉黑','金牌保护'],
     '⚔️ 武器':['树状数组','线段树','平衡树','莫队算法','评测机连发','管理员权限','双指针','冷数据','暴力枚举','手写快排','不死心','放手一搏','拔网线'], '🛡️ 防具':['并查集','记忆化搜索','玄学判题','黑名单','防火墙','AC保护'],
     '🐎 坐骑':['快速读入','内存屏障'], '🎴 锦囊':['对拍','爆零','停课集训','摸鱼','抄袭代码','请家长','O2优化','重构','模拟赛','女装直播','手动测评','封神','TLE','MLE','CE','骗分','申诉','玄学优化','卡评测机','板子','压轴题','数据加强','评测机抽风','CCF放水','题解大会','特判','找代打','链式前向星','UB','水群','断网','代码审计'],
     '🎉 彩蛋（游戏内触发后解锁）':['女装求AC','我样例过了！','评测机崩溃','原题大战','学长讲题','退役失败','面向数据编程','随机种子'] };
@@ -444,7 +444,7 @@ function loadLobby(){
         '<td><span class="pill '+(r.is_public?'pub':'priv')+'">'+(r.is_public?'公开':'私密')+'</span></td>'+
         '<td>'+esc(r.joined)+'/'+esc(r.player_limit)+'</td><td>'+esc(r.host)+'</td>'+
         '<td>'+(r.started?'<b>进行中</b>':r.full?'已满':'<span class="pub">可加入</span>')+'</td>'+
-        '<td><button class="btn green" onclick="joinRoom('+esc(r.id)+','+(r.is_public?1:0)+')">加入</button></td>';
+        '<td><button class="btn green" onclick="joinRoom('+esc(r.id)+','+(r.is_public?1:0)+','+(r.has_password?1:0)+')">加入</button></td>';
       tb.appendChild(tr);
     });
   }).catch(()=>{});
@@ -470,9 +470,9 @@ function createRoom(){
   .catch(()=>{alert('网络错误, 请重试');});
 }
 
-function joinRoom(id, isPublic){
-  if(isPublic){ doJoin(id,''); return; }
-  let pwd=prompt('请输入房间密码:');
+function joinRoom(id, isPublic, hasPwd){
+  if(!hasPwd && isPublic){ doJoin(id,''); return; }   // 公开且无密码: 直接进
+  let pwd=prompt('请输入房间密码(无密码直接确定):');
   if(pwd===null)return;
   doJoin(id,pwd||'');
 }
@@ -632,6 +632,7 @@ function render(){
     board+='<div class="'+cls+'" onclick="pickTarget('+p.id+')">'+
       '<div class="pname">'+esc(p.name)+(p.id===myId?' <span class="me-tag">我</span>':'')+'</div>'+
       '<div class="pclass">'+esc(p.profession)+'</div>'+
+      (p.identity&&p.identity!=='?'?'<div class="pident" style="font-size:.72em;color:var(--acc);">🎭 '+esc(p.identity)+'</div>':'')+
       '<div class="hp">'+(p.alive?('❤️'+p.hp+'/'+p.max_hp):'💀 阵亡')+'</div>'+
       '<div class="eq">'+eq+'</div>'+
       '<div class="pinfo">手牌:'+p.hand_count+(p.awakened?' ·✨觉醒':'')+(p.depression?' ·颓废x'+p.depression:'')+(p.chained?' ·🔗横置':'')+'</div>'+
@@ -681,8 +682,8 @@ function render(){
       return '<button class="btn" onclick="respond('+i+')">'+(c?esc(c.name):('手牌'+i))+'</button>';
     };
     let handBtns=(list)=>(list||[]).map(h=>'<button class="btn" onclick="respond('+h.index+')">'+suitEmoji(h.suit)+' '+esc(h.name)+'</button>').join('');
-    if(t==='response_wa'){ p='请打出【WA】应答: '+state.pending.valid_cards.map(cardBtn).join('')+' <button class="btn red" onclick="respond(-1)">放弃</button>'; }
-    else if(t==='evolution_select'){ p='选择进化: '+state.pending.context.candidates.map(c=>'<button class="btn gold" onclick="evoSelect('+c.id+')">'+esc(c.name)+'→'+esc(c.evo)+'</button>').join(''); }
+    if(t==='response_wa'){ p='请打出【WA】应答: '+state.pending.valid_cards.map(cardBtn).join('')+' <button class="btn red" onclick="respond(-2)">放弃</button>'; }
+    else if(t==='evolution_select'){ p='选择进化: '+state.pending.context.candidates.map(c=>'<button class="btn gold" onclick="evoSelect('+c.id+')">'+esc(c.name)+'→'+esc(c.evo)+'</button>').join('')+' <button class="btn red" onclick="evoSelect(-1)">放弃</button>'; }
     else if(t==='WAIT_O2_CARD'){ p='选择一张【做法假了】打出: '+state.pending.valid_cards.map(cardBtn).join(''); }
     else if(t==='WAIT_O2_TARGET'){ p='O2优化！选择攻击目标(点击玩家)'; selectedTarget=null; }
     else if(t==='WAIT_LIVE_TARGET'){ p='选择要偷取的手牌: '+handBtns(state.pending.hand_info); }
@@ -692,6 +693,8 @@ function render(){
     else if(t==='AOE_AC'){ p='【数据加强】请打出【做法假了】应对: '+state.pending.valid_cards.map(cardBtn).join('')+' <button class="btn red" onclick="respond(-1)">放弃(受1伤)</button>'; }
     else if(t==='AOE_WA'){ p='【评测机抽风】请打出【WA】应对: '+state.pending.valid_cards.map(cardBtn).join('')+' <button class="btn red" onclick="respond(-1)">放弃(受1伤)</button>'; }
     else if(t==='WAIT_AUDIT_REVEAL'){ p='【代码审计】请选择要展示的手牌: '+handBtns(state.pending.hand_info); }
+    else if(t==='WAIT_HARVEST'){ p='【题解大会】请选择1张题解: '+(state.pending.context.harvest_cards||[]).map((n,i)=>'<button class="btn" onclick="respond('+i+')">'+esc(n)+'</button>').join('')+' <button class="btn red" onclick="respond(-1)">放弃(随机)</button>'; }
+    else if(t==='WAIT_CHAOTIJIE'){ p='【抄题解】请选择要取的牌: '+(state.pending.context.cards||[]).map((n,i)=>'<button class="btn" onclick="respond('+i+')">'+esc(n)+'</button>').join('')+' <button class="btn red" onclick="respond(-1)">放弃</button>'; }
     else if(t==='WAIT_DEPRESSION'){ p='颓废标记：<button class="btn" onclick="depression(\'heal\')">回复1体力</button> <button class="btn" onclick="depression(\'draw\')">摸2牌</button> <button class="btn red" onclick="depression(\'none\')">不使用</button>'; }
     else p='等待响应...';
     pd.innerHTML='<div class="ptitle">🎯 需要你的响应</div>'+p;
@@ -712,6 +715,8 @@ function render(){
     pd.innerHTML='<div style="color:var(--mut);line-height:1.5">'+hint+'</div>';
   }
   // 显示职业主动技能按钮
+  // BUG-306: 游戏结束时禁用所有操作按钮
+  if(state.game_over){ let gb=document.getElementById('gamebtns'); if(gb) gb.style.display='none'; }
   let me=state.players&&state.players[myId]?state.players[myId]:null;
   let ba=document.getElementById('btnAkioi'),by=document.getElementById('btnChuYuanTi'),bz=document.getElementById('btnZhiBo');
   if(ba)ba.style.display=(me&&me.profession==='神犇'&&me.alive&&!state.pending)?'':'none';
@@ -904,13 +909,34 @@ function pickCard(i){
   selectedCard=i; render();
 }
 function playCard(i,tg){ send({type:'use_card',card_index:i,targets:tg||[]}); snd('draw'); }
+let daidangTargets=null;
 function pickTarget(id){
   if(state.pending&&state.pending.type==='WAIT_O2_TARGET'){send({type:'response',targets:[id]});return;}
+  if(state.pending&&state.pending.type==='WAIT_PUBLIC_EXEC'){send({type:'response',targets:[id]});return;}
   if(skillTargetMode){ let extra={}; if(skillTargetMode==='baoling') extra.mode=baoLingMode; send({type:'use_skill',skill:skillTargetMode,targets:[id],...extra}); skillTargetMode=null; render(); return; }
   if(selectedCard===null) return;
+  // BUG-301: 找代打需要 2 个目标 (先选持械角色, 再选攻击目标)
+  let cardName = (state.my_hand&&state.my_hand[selectedCard])?state.my_hand[selectedCard].name:'';
+  if(cardName==='找代打'){
+    if(daidangTargets===null){ daidangTargets=[id]; let pd=document.getElementById('prompt'); if(pd) pd.innerHTML='<div class="ptitle">🎯 找代打：再点击攻击目标（该角色的攻击范围内）</div>'; return; }
+    send({type:'use_card',card_index:selectedCard,targets:[daidangTargets[0],id]});
+    daidangTargets=null; selectedCard=null; render(); return;
+  }
+  // BUG-303: 多目标攻击卡(放手一搏/AK全场实锤) - 连续点击目标, 再次点击自己或结束确认
+  let isMulti = (cardName==='放手一搏') || (cardName==='实锤' && state.ak_all_active);
+  if(isMulti){
+    if(!window.multiTargets) window.multiTargets=[];
+    if(window.multiTargets.indexOf(id)<0) window.multiTargets.push(id);
+    let pd=document.getElementById('prompt');
+    if(pd) pd.innerHTML='<div class="ptitle">🎯 多目标攻击：已选 '+window.multiTargets.length+' 名（'+esc(cardName)+'）</div>'+
+      '<button class="btn gold" onclick="confirmMulti()">确认攻击</button> <button class="btn red" onclick="cancelMulti()">取消</button>';
+    return;
+  }
   send({type:'use_card',card_index:selectedCard,targets:[id]});
   selectedCard=null; render();
 }
+function confirmMulti(){ if(!window.multiTargets||!window.multiTargets.length) return; send({type:'use_card',card_index:selectedCard,targets:window.multiTargets}); window.multiTargets=null; selectedCard=null; render(); }
+function cancelMulti(){ window.multiTargets=null; selectedCard=null; render(); }
 function send(obj){ if(ws&&ws.readyState===1) ws.send(enc(JSON.stringify(obj))); }
 function respond(idx){ send({type:'response',card_index:idx}); }
 function evoSelect(id){ send({type:'response',evo_card_id:id}); }

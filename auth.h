@@ -19,6 +19,7 @@
 #include <cstdlib>
 #include <random>
 #include <chrono>
+#include <ctime>   // BUG-204: std::time 会话过期
 #include "socket_util.h"
 #include "logger.h"
 
@@ -106,16 +107,26 @@ public:
         if (!a) return "";
         std::string session = genSessionToken();
         sessions_[session] = username;
+        sessionBirth_[session] = std::time(nullptr);   // BUG-204: 记录会话创建时间
         return session;
     }
     void destroySession(const std::string& token) {
         std::lock_guard<std::mutex> lock(mtx_);
         sessions_.erase(token);
+        sessionBirth_.erase(token);
     }
     std::string usernameForToken(const std::string& token) {
         std::lock_guard<std::mutex> lock(mtx_);
         auto it = sessions_.find(token);
         if (it == sessions_.end()) return "";
+        // BUG-204 修复: 会话24小时过期
+        auto bit = sessionBirth_.find(token);
+        if (bit != sessionBirth_.end() && std::time(nullptr) - bit->second > 24*3600) {
+            sessions_.erase(it);
+            sessionBirth_.erase(bit);
+            keyMap_.erase(token);
+            return "";
+        }
         return it->second;
     }
     // 会话密钥 (每个会话独立, 用于 XOR 加密数据流)
@@ -224,6 +235,8 @@ public:
     bool setRole(const std::string& target, const std::string& newRoleStr) {
         Account* a = findUser(target);
         if (!a) return false;
+        // BUG-202 修复: superadmin 不可被降级/封禁
+        if (a->username == "superadmin") return false;
         Role newRole = strToRole(newRoleStr);
         if (newRoleStr == "banneduser") {
             a->banned = true;            // 封禁用户
@@ -232,9 +245,6 @@ public:
             a->banned = false;           // 其他角色均解除封禁
             a->role = newRole;
         }
-        if (newRoleStr != "banneduser" && a->username != "superadmin") {
-            // superadmin 不可被降级
-        }
         save();
         Logger::instance().action("角色变更: " + target + " -> " + roleToStr(a->banned ? ROLE_BANNEDUSER : a->role));
         return true;
@@ -242,6 +252,8 @@ public:
     bool ban(const std::string& target, bool banned) {
         Account* a = findUser(target);
         if (!a) return false;
+        // BUG-202 修复: superadmin 不可被封禁
+        if (a->username == "superadmin") return false;
         a->banned = banned;              // 封禁/解封
         if (banned) {
             // 封禁时踢掉该账号所有在线会话
@@ -370,6 +382,7 @@ private:
     std::map<std::string, Account> users_;
     std::map<std::string, std::string> sessions_; // token -> username
     std::map<std::string, std::string> keyMap_;   // token -> xor key
+    std::map<std::string, long long> sessionBirth_; // BUG-204: token -> 创建时间戳(秒)
 };
 
 #endif

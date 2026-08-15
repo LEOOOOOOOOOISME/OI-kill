@@ -3170,7 +3170,16 @@ json Room::getStateJson(int viewerId) {
     st["my_equip"] = myEq;
     st["coffee_boost"] = me.coffeeBoost;
     st["ak_all_active"] = me.akAllActive;   // 神犇觉醒·AK全场: 前端据此启用多目标选择 (一致性修复)
+    // ===== UI: 牌堆/弃牌堆计数与弃牌堆内容 (需求17.7: 牌堆计数 + 弃牌堆可查看; 弃牌堆公开) =====
+    st["deck_count"] = (int)deck.size();
+    st["discard_count"] = (int)discard.size();
+    json discArr = json::array();
+    for (auto& c : discard) discArr.push_back(c.symbol());
+    st["discard"] = discArr;
     if (pending && pending->targetPlayer == viewerId) {
+        // ===== UI: 响应倒计时 (需求17.7: 限时提示) =====
+        long long msLeft = duration_cast<milliseconds>(pending->deadline - steady_clock::now()).count();
+        st["pending_timeout"] = (int)std::max(0LL, msLeft / 1000);
         st["pending"] = {
             {"type", pending->type},
             {"valid_cards", pending->validCards},

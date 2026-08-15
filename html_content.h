@@ -330,6 +330,15 @@ body.warm #event-bar{background:linear-gradient(90deg,rgba(94,72,40,.95),rgba(74
   <div id="board"></div>
   <div id="cardtip" style="display:none;position:fixed;z-index:999;max-width:260px;background:rgba(10,13,24,.96);border:1px solid var(--acc);border-radius:10px;padding:10px 12px;font-size:.8rem;color:var(--ink);pointer-events:none;box-shadow:0 10px 26px rgba(0,0,0,.5);"></div>
   <div id="my-equip"></div>
+  <!-- 牌堆/弃牌堆计数 (需求17.7) -->
+  <div id="deckbar" style="display:flex;align-items:center;gap:12px;padding:4px 16px;font-size:.8em;color:var(--mut);border-bottom:1px solid var(--line);"></div>
+  <div id="discardview" style="display:none;position:fixed;inset:0;z-index:998;background:rgba(0,0,0,.55);align-items:center;justify-content:center;">
+    <div style="background:rgba(14,18,34,.98);border:1px solid var(--line);border-radius:12px;padding:18px 22px;max-width:680px;width:90%;max-height:70vh;overflow:auto;">
+      <h3 style="margin-top:0;color:var(--acc)">🗑️ 弃牌堆（公开）</h3>
+      <div id="discardlist" style="display:flex;flex-wrap:wrap;gap:8px;"></div>
+      <button class="btn red" onclick="toggleDiscard(false)" style="margin-top:14px">关闭</button>
+    </div>
+  </div>
   <div id="hand-title">🎴 手牌区</div>
   <div id="my-hand"></div>
   <div id="fx-overlay"><div class="fx-txt" id="fx-text"></div><div class="fx-sub" id="fx-sub"></div></div>
@@ -671,6 +680,9 @@ function render(){
     eqz=slot('⚔️','武器',meE.weapon)+slot('🛡️','防具',meE.armor)+slot('🐎','进攻坐骑',meE.mount_off)+slot('🛡️','防御坐骑',meE.mount_def);
   }
   document.getElementById('my-equip').innerHTML=eqz;
+  // ===== 牌堆/弃牌堆计数 (需求17.7) =====
+  let db=document.getElementById('deckbar');
+  if(db) db.innerHTML='🃏 牌堆余 <b style="color:var(--acc)">'+(state.deck_count!==undefined?state.deck_count:'?')+'</b> 张 · 弃牌堆 <b style="color:var(--acc)">'+(state.discard_count!==undefined?state.discard_count:(state.discard||[]).length)+'</b> 张 <button class="btn" style="font-size:.78em;padding:2px 10px" onclick="toggleDiscard(true)">🗑️ 查看弃牌堆</button>';
   let pd=document.getElementById('prompt');
   if(state.pending){
     let t=state.pending.type,p='';
@@ -706,6 +718,9 @@ function render(){
     else if(t==='WAIT_MODUI'){ p='【莫队算法】命中！可额外攻击一名可攻击目标(点击玩家)，或 <button class="btn red" onclick="send({type:\'response\',force:false})">不额外攻击</button>'; }
     else if(t==='WAIT_SUIYUAN'){ p='【随缘】选择摸牌方式: <button class="btn" onclick="suiyuan(\'suiyuan\')">摸1+弃牌堆1基本</button> <button class="btn" onclick="suiyuan(\'draw2\')">摸2张</button>'; }
     else p='等待响应...';
+    // ===== UI: 响应倒计时 (需求17.7: 限时提示, 超时按放弃处理) =====
+    if(state.pending_timeout!==undefined) pendingDeadline=Date.now()+state.pending_timeout*1000; else pendingDeadline=0;
+    p+='<div id="pcount" style="margin-top:6px;font-size:.8em;color:var(--mut)"></div>';
     pd.innerHTML='<div class="ptitle">🎯 需要你的响应</div>'+p;
   } else {
     // 游戏提示 (无待响应操作时显示)
@@ -718,6 +733,7 @@ function render(){
       hint = (state.phase===3) ? '🎮 轮到你出牌：点击手牌选择卡牌，再点击目标玩家使用；或点击【结束出牌】'
                                : '⏳ 你的回合进行中，请稍候…';
     } else {
+      pendingDeadline=0;   // 无待响应时停止倒计时
       let who=(state.players&&state.players[state.current_turn])?state.players[state.current_turn].name:'?';
       hint='⏳ 等待 '+esc(who)+' 行动…';
     }
@@ -906,6 +922,24 @@ function depression(c){ send({type:'response',choice:c}); }
 function forceHit(f){ send({type:'response',force:f}); }      // 强制命中/不死心 (一致性修复)
 function coldData(f){ send({type:'response',force:f}); }      // 冷数据 (一致性修复)
 function suiyuan(c){ send({type:'response',choice:c}); }      // 划水怪随缘 (一致性修复)
+// ===== UI: 弃牌堆查看 (需求17.7) =====
+function toggleDiscard(show){
+  let dv=document.getElementById('discardview'); if(!dv) return;
+  if(show){
+    let dl=document.getElementById('discardlist');
+    if(dl) dl.innerHTML=(state.discard||[]).map(s=>'<span style="border:1px solid var(--line);border-radius:8px;padding:4px 10px;font-size:.8em;background:rgba(10,14,34,.9)">'+esc(s)+'</span>').join('')||'<span style="color:var(--mut)">（弃牌堆为空）</span>';
+    dv.style.display='flex';
+  } else dv.style.display='none';
+}
+// ===== UI: 响应倒计时 (需求17.7: 限时提示) =====
+let pendingDeadline=0;
+setInterval(function(){
+  let el=document.getElementById('pcount'); if(!el) return;
+  if(pendingDeadline<=0){ el.textContent=''; return; }
+  let s=Math.max(0,Math.round((pendingDeadline-Date.now())/1000));
+  el.textContent='⏳ 限时 '+s+' 秒'+(s<=5?'（即将超时）':'');
+  el.style.color=(s<=5)?'#f44747':'';
+},1000);
 // 无需选择目标、点击即可打出的牌 (装备同理); 神犇的黑色手牌默认当【做法假了】攻击, 仍需选目标
 const NO_TARGET_CARDS=['摸鱼','重构','骗分','申诉','板子','手动测评','O2优化','评测机崩溃','我样例过了！','原题大战','退役失败','面向数据编程','随机种子','CCF捐款','咖啡','数据加强','评测机抽风','CCF放水','题解大会','女装直播','UB'];
 function pickCard(i){

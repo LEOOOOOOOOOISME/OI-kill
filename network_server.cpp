@@ -66,6 +66,28 @@ void WebServer::run() {
     }
     Logger::instance().info("服务器已启动, 监听 " + std::to_string(port_));
 
+    // BUG: 后台超时线程 (测试发现: pending 超时依赖 broadcast 触发; 若玩家挂机/无新操作,
+    // 广播停止 → resolvePendingTimeout 永不执行 → 游戏永久死锁)
+    std::thread([this]() {
+        while (running_) {
+            Sleep(800);
+            std::vector<int> touched;
+            {
+                std::lock_guard<std::mutex> lk(mgr_->mtx);
+                for (auto& kv : mgr_->rooms) {
+                    std::shared_ptr<Room> room = kv.second;
+                    if (room && room->pending) {
+                        std::string ptype = room->pending->type;
+                        room->resolvePendingTimeout();
+                        // 超时处理改变了 pending 或推进了流程 → 需要广播
+                        if (!room->pending || room->pending->type != ptype) touched.push_back(room->id);
+                    }
+                }
+            }
+            for (int rid : touched) broadcastToRoomState(rid);
+        }
+    }).detach();
+
     acceptLoop();
 }
 
@@ -474,7 +496,7 @@ void WebServer::handleWebSocket(SOCKET s, HttpRequest& req) {
                         }
                     }
                 }
-                                if (rId < 0) { wsSend(s, encryptText(key, "{\"type\":\"error\",\"msg\":\"未登录\"}")); }
+                if (rId < 0) { wsSend(s, encryptText(key, "{\"type\":\"error\",\"msg\":\"你不在任何房间中，请先创建或加入房间\"}")); }
                 else {
                     gs.roomId = rId;
                     // 成功加入, 锁定房间数据

@@ -778,6 +778,20 @@ bool Room::useCard(int pid, int cardIdx, std::vector<int> targets, json& result)
         }
     }
 
+    // 专属职业卡: 非对应职业使用给出明确提示 (测试发现: 原报"未实现的卡牌"误导)
+    if (card.name == "女装直播" && player.profession != "女装大佬") {
+        result["error"] = "【女装直播】仅女装大佬专属";
+        return false;
+    }
+    if (card.name == "封神" && player.profession != "传奇Au选手") {
+        result["error"] = "【封神】仅传奇Au选手专属";
+        return false;
+    }
+    if (card.name == "模拟赛" && player.profession != "金牌教练") {
+        result["error"] = "【模拟赛】仅金牌教练专属";
+        return false;
+    }
+
     // CE(编译错误): 本回合不能使用锦囊牌
     if (card.type == FUNC && player.noTrickThisTurn) {
         result["error"] = "被 CE（编译错误），本回合不能使用锦囊牌";
@@ -840,8 +854,9 @@ bool Room::useCard(int pid, int cardIdx, std::vector<int> targets, json& result)
         }
     }
 
-    // 内部攻击函数（做法假了与神犇碾压）
-    auto performAcAttack = [&](Card& usedCard, bool isVirtual = false) -> bool {
+    // 内部攻击函数（做法假了 / 神犇碾压 / 手写快排虚拟AC）
+    // consumeCard: 是否消耗真实手牌 (碾压黑牌=真牌需弃; 手写快排虚拟AC=无牌可弃)
+    auto performAcAttack = [&](Card& usedCard, bool isVirtual = false, bool consumeCard = true) -> bool {
         if (targets.empty()) return false;
         // 提前缓存引用指向的值, 避免 discardFromHand 后悬挂引用
         int usedCardId = usedCard.id;
@@ -851,7 +866,10 @@ bool Room::useCard(int pid, int cardIdx, std::vector<int> targets, json& result)
         bool akAll = player.akAllActive && targets.size() > 1;
         // 次数限制 (慈善评测机: 无次数; 评测机连发武器: 无次数)
         bool noLimit = (activeEvent == "慈善评测机") || (player.weapon && player.weapon->name == "评测机连发");
-        if (!akAll && player.acUsedThisTurn >= player.acLimit && !noLimit) return false;
+        if (!akAll && player.acUsedThisTurn >= player.acLimit && !noLimit) {
+            result["error"] = "本回合使用【做法假了】次数已达上限";   // 测试发现: 原静默失败, 客户端无感知
+            return false;
+        }
         // BUG-101/136 修复: 出杀即计次(无论是否被抵消/多目标只计1次)
         if (!akAll) player.acUsedThisTurn++;
         bool ignoreWA = (activeEvent == "毒瘤评测机"); // 毒瘤评测机: AC无视WA
@@ -943,7 +961,7 @@ bool Room::useCard(int pid, int cardIdx, std::vector<int> targets, json& result)
             // 冷数据武器: 造成伤害时可防止此伤害, 改为弃置目标2张牌 (可选项, 需求5.3)
             if (player.weapon && player.weapon->name == "冷数据" && dmg > 0) {
                 player.yunDuanUsed = true;
-                if (!isVirtual && !discarded) { discardFromHand(player, cardIdx); discarded = true; }
+                if (consumeCard && !discarded) { discardFromHand(player, cardIdx); discarded = true; }
                 std::vector<int> remain;
                 for (size_t rt = ti + 1; rt < targets.size(); ++rt) remain.push_back(targets[rt]);
                 json cctx = {{"target", tgt}, {"base_dmg", dmg}, {"remain", remain}};
@@ -952,7 +970,7 @@ bool Room::useCard(int pid, int cardIdx, std::vector<int> targets, json& result)
                 return true; // 等待攻击者选择
             }
             // 直接命中
-            if (!isVirtual && !discarded) { discardFromHand(player, cardIdx); discarded = true; }
+            if (consumeCard && !discarded) { discardFromHand(player, cardIdx); discarded = true; }
             dealDamage(player, target, dmg, true);
             // 树状数组看牌
             if (player.weapon && player.weapon->name == "树状数组") {
@@ -1046,7 +1064,7 @@ bool Room::useCard(int pid, int cardIdx, std::vector<int> targets, json& result)
             player.akAllActive = true;
             addLog("⚡ " + player.name + " 觉醒：AK全场！本回合下一张AC可指定任意数量目标");
         }
-        return performAcAttack(card, true);
+        return performAcAttack(card, true, true);   // 碾压: 黑牌真实消耗 (测试发现: 原不弃牌可无限碾压)
     }
     // WA: 只能作为攻击响应打出, 不能在出牌阶段直接使用
     if (card.name == "WA" || card.name == "样例全过") {
@@ -1679,7 +1697,7 @@ bool Room::useCard(int pid, int cardIdx, std::vector<int> targets, json& result)
         // 虚拟AC不携带 evolved 标记: 模板库效果是"1张手牌即可当做法假了", 不应获得实锤的伤害+1
         virtualAc.evolved = false;
         addLog("⚡ " + player.name + "【" + (vcName=="模板库"?"模板库":"手写快排") + "】将" + std::to_string(need) + "张手牌当做法假了使用");
-        return performAcAttack(virtualAc, true);
+        return performAcAttack(virtualAc, true, false);   // 手写快排虚拟AC: 无真实牌可弃
     }
     // 其他未实现卡牌
     result["error"] = "未实现的卡牌";

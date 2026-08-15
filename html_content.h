@@ -193,6 +193,9 @@ body.warm .chatlines{background:rgba(24,17,8,.9);}
 .card:hover{transform:translateY(-8px);box-shadow:0 16px 30px rgba(0,0,0,.55);}
 .card.sel{border-color:var(--acc);outline:2px solid var(--acc);transform:translateY(-10px);box-shadow:0 0 18px rgba(78,201,176,.4);}
 .card .csuit{font-size:1.05em;color:var(--acc2);font-weight:800;text-shadow:0 0 8px rgba(120,140,255,.4);}
+.card .cdesc{font-size:.58em;line-height:1.35;color:var(--mut);max-height:36px;overflow:hidden;padding:0 2px;}
+.card.usable{box-shadow:0 0 10px rgba(52,211,153,.6);border-color:rgba(52,211,153,.75);}
+body.warm .card.usable{box-shadow:0 0 10px rgba(127,201,127,.6);border-color:rgba(127,201,127,.75);}
 .card .cname{font-size:.88em;font-weight:800;line-height:1.3;word-break:break-all;color:#fff;}
 .card.red .cname{color:#ffd9d9;}
 .card .ctype{font-size:1em;}
@@ -233,6 +236,27 @@ body.warm #my-hand{background:rgba(30,22,10,.92);}
 body.warm #my-equip{background:rgba(30,22,10,.92);}
 body.warm #log{background:rgba(24,17,8,.9);}
 body.warm #event-bar{background:linear-gradient(90deg,rgba(94,72,40,.95),rgba(74,56,32,.95));}
+/* ===== 暖色主题冷色残留清理: 提示框/按钮/边框/字体/高亮光晕 ===== */
+body.warm #prompt{background:rgba(42,31,16,.94);border-color:#6a5538;}
+body.warm #skillinfo{background:rgba(42,31,16,.8) !important;}
+body.warm #cardtip{background:rgba(30,22,10,.97);}
+body.warm #discardview>div{background:rgba(34,25,13,.98) !important;}
+body.warm .btn.gold{background:linear-gradient(135deg,#e0a458,#c67b3f);color:#241800;box-shadow:0 6px 16px rgba(224,164,88,.3);}
+body.warm .btn.gold:hover{box-shadow:0 6px 16px rgba(224,164,88,.4);}
+body.warm .btn:hover{box-shadow:0 6px 16px rgba(224,164,88,.25);}
+body.warm .top .tbtn{background:rgba(224,164,88,.14);color:#f0e6d4;}
+body.warm .top .tbtn:hover{border-color:var(--acc2);color:#fff;}
+body.warm .player-slot.me{box-shadow:0 0 18px rgba(224,164,88,.18);}
+body.warm .card.evolved{box-shadow:0 0 14px rgba(224,164,88,.5);}
+body.warm .card.sel{box-shadow:0 0 18px rgba(224,164,88,.4);}
+body.warm .eq-slot.filled{box-shadow:0 0 12px rgba(224,164,88,.22);}
+body.warm .eq-slot .nm{color:#fff0d8;}
+body.warm .eq-slot .empty-txt{color:#8a7a55;}
+body.warm th{color:#c9b896;}
+body.warm tr:hover{background:rgba(224,164,88,.07);}
+body.warm .empty{color:#8a7a55;}
+body.warm .pub{background:rgba(127,201,127,.15);color:#a8e0a8;border:1px solid rgba(127,201,127,.35);}
+body.warm .priv{background:rgba(224,164,88,.12);color:#e0a458;border:1px solid rgba(224,164,88,.35);}
 /* ===== 装备区/手牌区分开显示 (#0815-3) ===== */
 #my-equip{background:rgba(10,14,34,.92);padding:12px 16px;display:flex;gap:12px;flex-wrap:wrap;align-items:center;border-top:1px solid var(--line);min-height:70px;}
 .eq-slot{display:flex;align-items:center;gap:8px;background:rgba(30,38,74,.75);border:1px dashed #4a5aa8;border-radius:10px;padding:7px 12px;font-size:.82em;min-width:170px;transition:all .2s;}
@@ -661,10 +685,18 @@ function render(){
       let gh='<div class="hand-group"><div class="g-label">'+label+'</div>';
       idxs.forEach(i=>{
         let c=state.my_hand[i];
-        let cls='card '+(c.suit==='heart'||c.suit==='diamond'?'red':'black')+(c.evolved?' evolved':'')+(selectedCard===i?' sel':'');
+        // 可用高亮: 自己出牌阶段、无待响应时, 除响应牌(WA/样例全过/特判/一票否决)外均高亮 (需求17.2)
+        let canUse=!state.pending && state.current_turn===myId && state.phase===3 &&
+                   (state.players&&state.players[myId]&&state.players[myId].alive) &&
+                   c.name!=='WA'&&c.name!=='样例全过'&&c.name!=='特判'&&c.name!=='一票否决';
+        let cls='card '+(c.suit==='heart'||c.suit==='diamond'?'red':'black')+(c.evolved?' evolved':'')+(selectedCard===i?' sel':'')+(canUse?' usable':'');
         let tIcon=(c.type===0)?'⚔️':(c.type===1)?'🛡️':(c.type===2)?'❤️':(c.type===7)?'🎴':(c.type>=3&&c.type<=6)?'⚙️':'🎉';
+        // 卡面一句功能描述 (需求17.2: 卡面下方为一句功能描述)
+        let desc=(CARD_INFO[c.name]||'').replace(/^[^:：]*[:：]/,'').split('。')[0].split('；')[0];
+        if(desc.length>13) desc=desc.slice(0,12)+'…';
         gh+='<div class="'+cls+'" data-name="'+esc(c.name)+'" onmouseenter="showTip(this)" onmouseleave="hideTip()" onmousemove="moveTip(event)" onclick="pickCard('+i+')">'+
             '<div class="csuit">'+suitEmoji(c.suit)+'</div><div class="cname">'+esc(c.name)+(c.evolved?' ✨':'')+'</div>'+
+            '<div class="cdesc">'+esc(desc)+'</div>'+
             '<div class="ctype">'+tIcon+'</div><div class="cnum">'+esc(c.number)+'</div></div>';
       });
       gh+='</div>';

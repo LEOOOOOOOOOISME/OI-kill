@@ -1,4 +1,5 @@
 @echo off
+chcp 65001 >NUL
 REM ==========================================================================
 REM  build.bat - One-click build for the OI-Kill server
 REM  Encoding policy (key to fixing "mojibake/JSON crash"):
@@ -12,9 +13,10 @@ REM       - HTML/JSON bodies are sent as-is in UTF-8; the browser meta
 REM         charset=UTF-8 displays Chinese correctly.
 REM    4) -std=c++11 : the project targets C++11. game_engine.cpp must NOT
 REM       use C++14-only syntax (no std::make_unique / chrono 15s literals).
+REM    5) -w : suppress compiler warnings for a clean console (the old -Wall
+REM       produced noise from third-party headers like NOMINMAX).
 REM  Do NOT switch to -fexec-charset=GBK (JSON will crash).
 REM ==========================================================================
-chcp 65001 >NUL
 
 set "GXX=C:\Program Files (x86)\Dev-Cpp\MinGW64\bin\g++.exe"
 if not exist "%GXX%" set "GXX=g++"
@@ -22,7 +24,7 @@ if not exist "%GXX%" set "GXX=g++"
 "%GXX%" ^
   -std=c++11 ^
   -O2 ^
-  -Wall ^
+  -w ^
   -I. ^
   -finput-charset=UTF-8 ^
   -fexec-charset=UTF-8 ^

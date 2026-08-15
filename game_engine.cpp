@@ -3185,6 +3185,10 @@ json Room::getStateJson(int viewerId) {
     st["my_equip"] = myEq;
     st["coffee_boost"] = me.coffeeBoost;
     st["ak_all_active"] = me.akAllActive;   // 神犇觉醒·AK全场: 前端据此启用多目标选择 (一致性修复)
+    // ===== UI: 目标态/提示 (需求17.7/17.10): 本玩家可攻击的目标列表 =====
+    json cat = json::array();
+    for (auto& p : players) if (p.alive && p.id != viewerId && canAttack(viewerId, p.id)) cat.push_back(p.id);
+    st["can_attack_targets"] = cat;
     // ===== UI: 牌堆/弃牌堆计数与弃牌堆内容 (需求17.7: 牌堆计数 + 弃牌堆可查看; 弃牌堆公开) =====
     st["deck_count"] = (int)deck.size();
     st["discard_count"] = (int)discard.size();

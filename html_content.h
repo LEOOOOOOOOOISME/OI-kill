@@ -283,10 +283,33 @@ body.warm .priv{background:rgba(224,164,88,.12);color:#e0a458;border:1px solid r
 #fx-overlay .fx-sub{font-size:18px;color:#ffe9c9;margin-top:10px;text-shadow:0 2px 10px rgba(0,0,0,.8);}
 .top .tbtn{background:rgba(120,140,255,.14);color:#dfe5ff;border:1px solid var(--line);padding:6px 12px;border-radius:10px;cursor:pointer;font-size:.8em;font-weight:700;transition:all .15s;}
 .top .tbtn:hover{border-color:var(--acc);color:#fff;}
+/* ===== 模态框 (需求17.11: 关键操作模态, 禁止误点) ===== */
+#modal-mask{position:fixed;inset:0;background:rgba(0,0,0,.55);z-index:900;display:none;align-items:center;justify-content:center;backdrop-filter:blur(2px);}
+#modal-mask.show{display:flex;}
+#modal-mask #prompt{width:92%;max-width:700px;margin:0;box-shadow:0 18px 50px rgba(0,0,0,.55);}
+body.warm #modal-mask{background:rgba(24,14,4,.62);}
+/* ===== 五状态反馈链: 目标态 (需求17.7: 合法目标绿光圈, 非法目标灰暗) ===== */
+@keyframes tgtPulse{0%,100%{box-shadow:0 0 0 0 rgba(52,211,153,.5);border-color:rgba(52,211,153,.95);}50%{box-shadow:0 0 0 7px rgba(52,211,153,.25);border-color:rgba(52,211,153,1);}}
+.player-slot.tgt{animation:tgtPulse 1.1s ease infinite;cursor:pointer;}
+.player-slot.nontgt{opacity:.4;filter:grayscale(.7);pointer-events:none;}
+@keyframes tgtPulseWarm{0%,100%{box-shadow:0 0 0 0 rgba(224,164,88,.5);border-color:rgba(224,164,88,.95);}50%{box-shadow:0 0 0 7px rgba(224,164,88,.25);border-color:rgba(224,164,88,1);}}
+body.warm .player-slot.tgt{animation-name:tgtPulseWarm;}
+/* ===== 五状态反馈链: 确认态 (需求17.7: 确认条) ===== */
+.confirm-bar{margin-top:10px;padding:10px 14px;background:rgba(78,201,176,.12);border:1px solid rgba(78,201,176,.4);border-radius:10px;font-size:.92em;}
+body.warm .confirm-bar{background:rgba(224,164,88,.12);border-color:rgba(224,164,88,.4);}
+/* ===== "你可以…"提示 (需求17.10) ===== */
+.can-do{font-size:.82em;line-height:1.75;text-align:left;color:var(--mut);}
+.can-do b{color:var(--acc);}
+/* ===== 新手教程 (需求17.10) ===== */
+.tut-step{font-size:.95em;line-height:1.8;color:var(--ink);text-align:left;padding:4px 2px;}
+.tut-step b{color:var(--acc);}
+#tutorial-box h3{margin:0 0 10px;color:var(--acc);letter-spacing:1px;}
+#tutorial-box .tut-nav{margin-top:14px;display:flex;gap:8px;justify-content:center;}
 </style></head><body>
 <div class="top"><h2>OI杀 <span id="roomNameTop" style="display:none;font-size:14px;letter-spacing:1px;color:var(--acc);background:rgba(78,201,176,.12);padding:2px 10px;border-radius:10px;vertical-align:middle"></span></h2><div class="user">账号: <b id="uname">-</b> <span id="role"></span>
   <button class="tbtn" id="btnTheme" onclick="toggleTheme()">🌗 主题</button>
   <button class="tbtn" id="btnSnd" onclick="toggleSnd()">🔊 音效</button>
+  <button class="tbtn" id="btnFx" onclick="toggleFx()">✨ 特效</button>
   <button class="btn" onclick="logout()">退出</button></div></div>
 
 <!-- 大厅 -->
@@ -366,7 +389,19 @@ body.warm .priv{background:rgba(224,164,88,.12);color:#e0a458;border:1px solid r
   <div id="hand-title">🎴 手牌区</div>
   <div id="my-hand"></div>
   <div id="fx-overlay"><div class="fx-txt" id="fx-text"></div><div class="fx-sub" id="fx-sub"></div></div>
-  <div id="prompt"></div>
+  <div id="modal-mask"><div id="prompt"></div></div>
+  <!-- 新手教程 (需求17.10: 首次进入3步气泡, 可跳过) -->
+  <div id="tutorial-box" style="display:none;position:fixed;inset:0;z-index:950;background:rgba(0,0,0,.6);align-items:center;justify-content:center;">
+    <div style="background:rgba(14,18,34,.98);border:1px solid var(--acc);border-radius:14px;padding:22px 26px;max-width:540px;width:92%;">
+      <h3>📖 新手教程（第 <span id="tutCur">1</span>/3 步）</h3>
+      <div class="tut-step" id="tutText"></div>
+      <div class="tut-nav">
+        <button class="btn" id="tutPrev" onclick="tutStep(-1)">上一步</button>
+        <button class="btn green" id="tutNext" onclick="tutStep(1)">下一步</button>
+        <button class="btn red" onclick="tutDone()">跳过</button>
+      </div>
+    </div>
+  </div>
   <div id="gamebtns">
     <button class="btn green" onclick="skipPhase()">结束出牌</button>
     <button class="btn gold" id="btnAkioi" style="display:none" onclick="useSkill('akioi')">AKIOI</button>
@@ -409,12 +444,30 @@ let lastLogLen = 0, lastHp = {}, lastGameOver = false;
 function suitEmoji(s){ return s==='spade'?'♠':s==='club'?'♣':s==='heart'?'♥':s==='diamond'?'♦':(s||''); }
 let actx=null;
 function beep(f0,f1,dur,type,vol){ if(!soundOn) return; try{ if(!actx) actx=new (window.AudioContext||window.webkitAudioContext)(); if(actx.state==='suspended') actx.resume(); let t=actx.currentTime; let o=actx.createOscillator(), g=actx.createGain(); o.type=type||'sine'; o.frequency.setValueAtTime(Math.max(1,f0),t); o.frequency.exponentialRampToValueAtTime(Math.max(1,f1),t+dur); g.gain.setValueAtTime(vol||0.1,t); g.gain.exponentialRampToValueAtTime(0.0001,t+dur); o.connect(g); g.connect(actx.destination); o.start(t); o.stop(t+dur+0.03);}catch(e){} }
-function snd(k){ let M={attack:()=>beep(320,90,.26,'square',.09),dodge:()=>beep(700,950,.12,'triangle',.09),heal:()=>beep(520,840,.2,'sine',.11),draw:()=>beep(980,1250,.07,'triangle',.07),equip:()=>beep(420,540,.1,'square',.06),judge:()=>{beep(660,660,.08,'sine',.09);setTimeout(()=>beep(880,880,.08,'sine',.09),100);},dead:()=>beep(230,55,.6,'sawtooth',.11),awaken:()=>{beep(523,523,.13,'sine',.11);setTimeout(()=>beep(659,659,.13,'sine',.11),130);setTimeout(()=>beep(784,784,.22,'sine',.11),260);},aoe:()=>{beep(170,55,.5,'sawtooth',.09);setTimeout(()=>beep(250,70,.4,'sawtooth',.07),170);},win:()=>{beep(523,523,.15,'sine',.11);setTimeout(()=>beep(659,659,.15,'sine',.11),150);setTimeout(()=>beep(784,784,.18,'sine',.11),300);setTimeout(()=>beep(1046,1046,.3,'sine',.11),450);},err:()=>beep(210,130,.22,'square',.07)}; if(M[k]) M[k](); }
-function fx(text,sub,dur){ let ov=document.getElementById('fx-overlay'); if(!ov) return; document.getElementById('fx-text').textContent=text; document.getElementById('fx-sub').textContent=sub||''; ov.classList.add('show'); clearTimeout(ov._t); ov._t=setTimeout(()=>ov.classList.remove('show'), dur||1000); }
+function snd(k){ if(fxLevel==='off') return; if(fxLevel==='light' && !FX_A[k]) return; let M={attack:()=>beep(320,90,.26,'square',.09),dodge:()=>beep(700,950,.12,'triangle',.09),heal:()=>beep(520,840,.2,'sine',.11),draw:()=>beep(980,1250,.07,'triangle',.07),equip:()=>beep(420,540,.1,'square',.06),judge:()=>{beep(660,660,.08,'sine',.09);setTimeout(()=>beep(880,880,.08,'sine',.09),100);},dead:()=>beep(230,55,.6,'sawtooth',.11),awaken:()=>{beep(523,523,.13,'sine',.11);setTimeout(()=>beep(659,659,.13,'sine',.11),130);setTimeout(()=>beep(784,784,.22,'sine',.11),260);},aoe:()=>{beep(170,55,.5,'sawtooth',.09);setTimeout(()=>beep(250,70,.4,'sawtooth',.07),170);},win:()=>{beep(523,523,.15,'sine',.11);setTimeout(()=>beep(659,659,.15,'sine',.11),150);setTimeout(()=>beep(784,784,.18,'sine',.11),300);setTimeout(()=>beep(1046,1046,.3,'sine',.11),450);},err:()=>beep(210,130,.22,'square',.07)}; if(M[k]) M[k](); }
+function fx(text,sub,dur,level){ if(!fxEnabled(level||'B')) return; let ov=document.getElementById('fx-overlay'); if(!ov) return; document.getElementById('fx-text').textContent=text; document.getElementById('fx-sub').textContent=sub||''; ov.classList.add('show'); clearTimeout(ov._t); ov._t=setTimeout(()=>ov.classList.remove('show'), dur||1000); }
 function applyTheme(){ let warm=localStorage.getItem('oikill_theme')==='warm'; document.body.classList.toggle('warm',warm); let b=document.getElementById('btnTheme'); if(b) b.textContent = warm?'🌞 暖色':'🌙 冷色'; }
 function toggleTheme(){ localStorage.setItem('oikill_theme', document.body.classList.contains('warm')?'cold':'warm'); applyTheme(); }
 function toggleSnd(){ soundOn=!soundOn; localStorage.setItem('oikill_snd', soundOn?'on':'off'); let b=document.getElementById('btnSnd'); if(b) b.textContent = soundOn?'🔊 音效':'🔇 音效'; }
 function flashSlot(pid,cls){ let slots=document.querySelectorAll('#board .player-slot'); if(pid>=0&&pid<slots.length){ let el=slots[pid]; el.classList.add(cls); setTimeout(()=>el.classList.remove(cls), 900); } }
+// ===== 特效强度三档 (需求17.9: 全效/轻量/无, localStorage 持久化) =====
+let fxLevel = localStorage.getItem('oikill_fx') || 'full';
+const FX_LEVELS = ['full','light','off'];
+const FX_NAMES = {full:'✨ 特效:全效',light:'🌀 特效:轻量',off:'🚫 特效:无'};
+const FX_A = {awaken:1,dead:1,aoe:1,win:1};   // A级音效: 觉醒/阵亡/AOE/胜利 (17.8 A级表)
+function fxEnabled(level){ return fxLevel==='full' || (fxLevel==='light' && level==='A'); }
+function toggleFx(){ fxLevel = FX_LEVELS[(FX_LEVELS.indexOf(fxLevel)+1)%3]; localStorage.setItem('oikill_fx', fxLevel); let b=document.getElementById('btnFx'); if(b) b.textContent=FX_NAMES[fxLevel]; }
+// ===== 新手教程 (需求17.10: 首次3步气泡, 可跳过) =====
+const TUT_STEPS=[
+  {t:'如何出牌', d:'点击手牌选中（金色描边+上浮），再点击目标玩家——<b>绿色光圈=可攻击目标</b>，非法目标会灰暗；底部弹出确认条后点【✅ 确认】打出。点击自己或【✖ 取消】可随时取消。'},
+  {t:'如何响应', d:'被攻击或成为锦囊目标时，弹出<b>模态响应框</b>（全屏遮罩，无法误点其他区域）：可打出【WA】闪避、【特判】抵消、【并查集】弃牌当闪、【玄学判题】判定等；<b>限时 10 秒</b>，超时按放弃处理。'},
+  {t:'如何弃牌', d:'回合结束自动<b>弃牌至手牌上限（=当前体力）</b>，体力为 0 时无需弃牌。每回合默认只能使用 1 张【做法假了】；装备【评测机连发】后无次数限制。'}
+];
+let tutIdx=0, tutShown=false;
+function tutShow(){ tutIdx=0; tutRender(); let tb=document.getElementById('tutorial-box'); if(tb) tb.style.display='flex'; tutShown=true; }
+function tutRender(){ let txt=document.getElementById('tutText'); let cur=document.getElementById('tutCur'); if(txt) txt.innerHTML='<b>'+esc(TUT_STEPS[tutIdx].t)+'</b><br>'+TUT_STEPS[tutIdx].d; if(cur) cur.textContent=(tutIdx+1); let pv=document.getElementById('tutPrev'); if(pv) pv.style.visibility=(tutIdx===0?'hidden':'visible'); let nx=document.getElementById('tutNext'); if(nx) nx.textContent=(tutIdx===TUT_STEPS.length-1?'✅ 完成':'下一步'); }
+function tutStep(d){ tutIdx+=d; if(tutIdx>=TUT_STEPS.length){ tutDone(); return; } if(tutIdx<0) tutIdx=0; tutRender(); }
+function tutDone(){ localStorage.setItem('oikill_tutorial','done'); let tb=document.getElementById('tutorial-box'); if(tb) tb.style.display='none'; tutShown=false; }
 function esc(s){return (s==null?'':String(s)).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&#39;');}
 // 角色显示: 不区分 superadmin, 仅显示 "管理员" 或 "玩家"
 function roleName(r){return (r==='admin'||r==='superadmin')?'管理员':'玩家';}
@@ -422,6 +475,7 @@ function roleName(r){return (r==='admin'||r==='superadmin')?'管理员':'玩家'
 window.addEventListener('load',()=>{
   applyTheme();
   let sb=document.getElementById('btnSnd'); if(sb) sb.textContent = soundOn?'🔊 音效':'🔇 音效';
+  let fxb=document.getElementById('btnFx'); if(fxb) fxb.textContent = FX_NAMES[fxLevel];
   fetch(api+'/api/me').then(r=>r.json()).then(j=>{
     if(!j.ok){alert(j.msg||'未登录');location.href='/login';return;}
     uname=j.username; document.getElementById('uname').textContent=uname;
@@ -654,9 +708,20 @@ function render(){
   if(state.round)ev+=' | 第'+state.round+'轮';
   if(state.current_turn>=0&&state.current_turn<state.players.length){ev+=' | 当前: '+esc(state.players[state.current_turn].name);}
   document.getElementById('event-bar').textContent=(state.game_over?('🎉 '+state.winner):ev)+(state.game_over?' 🏁':'');
+  // ===== 五状态反馈链-目标态 (需求17.7): 选中牌后合法目标绿光圈, 非法目标灰暗 =====
+  let selName=(selectedCard!==null&&state.my_hand&&state.my_hand[selectedCard])?state.my_hand[selectedCard].name:'';
+  let tgtMode=0; // 0=无目标态, 1=攻击类(按 can_attack_targets), 2=锦囊(所有其他存活可点, 服务端校验)
+  if(selectedCard!==null&&!state.pending){
+    if(isAttackSelCard(selName)) tgtMode=1;
+    else if(['对拍','爆零','抄袭代码','请家长','代码审计','压轴题','TLE','MLE','CE','玄学优化','卡评测机','停课集训','封神','链式前向星','水群','断网','找代打','女装求AC','学长讲题','手动测评','板子'].indexOf(selName)>=0) tgtMode=2;
+  }
+  let tgtSet={};
+  if(tgtMode===1){ (state.can_attack_targets||[]).forEach(t=>tgtSet[t]=1); }
   let board='';
   state.players.forEach(p=>{
     let cls='player-slot'+(p.id==state.current_turn?' active':'')+(p.alive?'':' dead')+(p.id===myId?' me':'');
+    if(tgtMode===1 && p.alive && p.id!==myId){ cls+=(tgtSet[p.id]?' tgt':' nontgt'); }
+    else if(tgtMode===2 && p.alive && p.id!==myId){ cls+=' tgt'; }
     let eq='';
     if(p.weapon){eq+='<span class="eitem" title="武器">⚔️'+esc(p.weapon)+'</span>';}
     if(p.armor){eq+='<span class="eitem" title="防具">🛡️'+esc(p.armor)+'</span>';}
@@ -716,6 +781,8 @@ function render(){
   let db=document.getElementById('deckbar');
   if(db) db.innerHTML='🃏 牌堆余 <b style="color:var(--acc)">'+(state.deck_count!==undefined?state.deck_count:'?')+'</b> 张 · 弃牌堆 <b style="color:var(--acc)">'+(state.discard_count!==undefined?state.discard_count:(state.discard||[]).length)+'</b> 张 <button class="btn" style="font-size:.78em;padding:2px 10px" onclick="toggleDiscard(true)">🗑️ 查看弃牌堆</button>';
   let pd=document.getElementById('prompt');
+  let mm=document.getElementById('modal-mask');
+  if(mm) mm.classList.toggle('show', !!state.pending);   // 需求17.11: 待响应时全屏模态
   if(state.pending){
     let t=state.pending.type,p='';
     // 待响应按钮: 显示手牌名称而非编号 (#0815-1)
@@ -762,8 +829,20 @@ function render(){
     if(state.game_over){ hint='🏁 '+esc(state.winner||'游戏结束')+' — 点击【退出房间】返回大厅'; }
     else if(joined<limit){ hint='🕐 等待玩家加入 ('+joined+'/'+limit+')，满员后自动开始…'; }
     else if(state.current_turn===myId){
-      hint = (state.phase===3) ? '🎮 轮到你出牌：点击手牌选择卡牌，再点击目标玩家使用；或点击【结束出牌】'
-                               : '⏳ 你的回合进行中，请稍候…';
+      if(state.phase===3){
+        // ===== "你可以…"提示 (需求17.10): 出牌阶段高亮当前合法操作 =====
+        let acts=[]; let atk=(state.can_attack_targets||[]); let meP2=state.players&&state.players[myId];
+        if(state.my_hand) state.my_hand.forEach(c=>{
+          if(acts.length>=6) return;
+          if(c.name==='WA'||c.name==='样例全过'||c.name==='特判'||c.name==='一票否决') return;
+          if(c.type>=3&&c.type<=6){ acts.push('装备【'+c.name+'】'); return; }
+          if(NO_TARGET_CARDS.indexOf(c.name)>=0){ acts.push('使用【'+c.name+'】'); return; }
+          let isAtk = (c.name==='做法假了'||c.name==='实锤') || (meP2&&meP2.profession==='神犇'&&(c.suit==='spade'||c.suit==='club')&&!(c.type>=3&&c.type<=6));
+          if(isAtk){ acts.push(atk.length?('使用【'+c.name+'】攻击 '+atk.map(x=>x+'号').join('/')):('使用【'+c.name+'】（暂无攻击范围内目标）')); return; }
+          acts.push('使用【'+c.name+'】选目标');
+        });
+        hint='<div class="can-do"><b>你可以：</b>'+((acts.length?acts.join(' · '):'（无可执行操作）')+(state.my_hand&&state.my_hand.length>6?' …':''))+'</div>';
+      } else hint='⏳ 你的回合进行中，请稍候…';
     } else {
       pendingDeadline=0;   // 无待响应时停止倒计时
       let who=(state.players&&state.players[state.current_turn])?state.players[state.current_turn].name:'?';
@@ -833,16 +912,16 @@ function render(){
     for(let i=lastLogLen;i<logs.length;i++){
       let L=logs[i]||'';
       let whoIn=()=>{ let p=(state.players||[]).find(x=>x.name!=='等待加入'&&L.indexOf(x.name)>=0); return p?p.id:-1; };
-      if(L.indexOf('使用【数据加强】')>=0){ snd('aoe'); fx('📢 数据加强！','全员打出做法假了，否则受到伤害',1200); }
-      else if(L.indexOf('使用【评测机抽风】')>=0){ snd('aoe'); fx('📢 评测机抽风！','全员打出WA，否则受到伤害',1200); }
+      if(L.indexOf('使用【数据加强】')>=0){ snd('aoe'); fx('📢 数据加强！','全员打出做法假了，否则受到伤害',1200,'A'); }
+      else if(L.indexOf('使用【评测机抽风】')>=0){ snd('aoe'); fx('📢 评测机抽风！','全员打出WA，否则受到伤害',1200,'A'); }
       else if(L.indexOf('CCF 放水')>=0){ snd('heal'); fx('💧 CCF放水！','人人有分',1000); }
       else if(L.indexOf('题解大会')>=0){ snd('draw'); fx('📚 题解大会！','人人有题解抄',1000); }
-      else if(L.indexOf('评测机崩溃')>=0){ snd('aoe'); fx('💥 评测机崩溃！','Ctrl+C都救不了你们',1300); }
-      else if(L.indexOf('直播女装')>=0){ snd('aoe'); fx('📺 女装直播！','在线发牌',1100); }
-      else if(L.indexOf('链式前向星传导')>=0){ snd('aoe'); fx('🔗 伤害传导！','链上节点一损俱损',1000); }
-      else if(L.indexOf('觉醒')>=0){ snd('awaken'); fx('✨ 觉醒！','',1200); }
-      else if(L.indexOf('进化了')>=0){ snd('awaken'); fx('🔥 进化！','',1100); }
-      else if(L.indexOf(' 死亡')>=0){ snd('dead'); fx('💀 阵亡','',1100); }
+      else if(L.indexOf('评测机崩溃')>=0){ snd('aoe'); fx('💥 评测机崩溃！','Ctrl+C都救不了你们',1300,'A'); }
+      else if(L.indexOf('直播女装')>=0){ snd('aoe'); fx('📺 女装直播！','在线发牌',1100,'A'); }
+      else if(L.indexOf('链式前向星传导')>=0){ snd('aoe'); fx('🔗 伤害传导！','链上节点一损俱损',1000,'A'); }
+      else if(L.indexOf('觉醒')>=0){ snd('awaken'); fx('✨ 觉醒！','',1200,'A'); }
+      else if(L.indexOf('进化了')>=0){ snd('awaken'); fx('🔥 进化！','',1100,'A'); }
+      else if(L.indexOf(' 死亡')>=0){ snd('dead'); fx('💀 阵亡','',1100,'A'); }
       else if(L.indexOf(' 受到 ')>=0){ let pid=whoIn(); if(pid>=0) flashSlot(pid,'hit'); snd('attack'); }
       else if(L.indexOf('回复')>=0){ let pid=whoIn(); if(pid>=0) flashSlot(pid,'healglow'); snd('heal'); }
       else if(L.indexOf('判定')>=0){ snd('judge'); }
@@ -855,7 +934,9 @@ function render(){
   let hpNow={}; (state.players||[]).forEach(p=>hpNow[p.id]=p.hp);
   for(let id in hpNow){ if(lastHp[id]!==undefined && hpNow[id]<lastHp[id]) flashSlot(parseInt(id),'hit'); }
   lastHp=hpNow;
-  if(state.game_over && !lastGameOver){ lastGameOver=true; snd('win'); fx('🏁 '+esc(state.winner||'游戏结束'),'',1600); }
+  // 新手教程 (需求17.10): 首次进入游戏界面时弹出3步气泡, 可跳过
+  if(inGame && !localStorage.getItem('oikill_tutorial') && !tutShown){ tutShow(); }
+  if(state.game_over && !lastGameOver){ lastGameOver=true; snd('win'); fx('🏁 '+esc(state.winner||'游戏结束'),'',1600,'A'); }
   if(!state.game_over) lastGameOver=false;
 }
 // 卡牌功能注释 (悬浮卡牌显示)
@@ -988,6 +1069,25 @@ function pickCard(i){
 }
 function playCard(i,tg){ send({type:'use_card',card_index:i,targets:tg||[]}); snd('draw'); }
 let daidangTargets=null;
+let pendingAct=null;   // 五状态反馈链-确认态 (需求17.7): {i, targets, name}
+function isAttackSelCard(name){
+  // 攻击类: 做法假了/实锤/神犇碾压黑色牌
+  if(name==='做法假了'||name==='实锤') return true;
+  let me=state.players&&state.players[myId];
+  if(me&&me.profession==='神犇'){
+    let c=(state.my_hand&&state.my_hand[selectedCard]);
+    if(c && (c.suit==='spade'||c.suit==='club') && !(c.type>=3&&c.type<=6)) return true;
+  }
+  return false;
+}
+function setPendingAct(i,targets,name){
+  pendingAct={i:i,targets:targets.slice(),name:name};
+  let pd=document.getElementById('prompt');
+  if(pd) pd.innerHTML='<div class="ptitle">🎯 确认操作</div><div class="confirm-bar">对 '+targets.map(x=>x+'号').join('、')+' 使用【'+esc(name)+'】？<br>'+
+    '<button class="btn gold" onclick="confirmAct()">✅ 确认</button> <button class="btn red" onclick="cancelAct()">✖ 取消</button></div>';
+}
+function confirmAct(){ if(!pendingAct) return; let i=pendingAct.i, ts=pendingAct.targets; pendingAct=null; daidangTargets=null; window.multiTargets=null; send({type:'use_card',card_index:i,targets:ts}); snd('draw'); selectedCard=null; render(); }
+function cancelAct(){ pendingAct=null; daidangTargets=null; window.multiTargets=null; selectedCard=null; render(); }
 function pickTarget(id){
   if(state.pending&&state.pending.type==='WAIT_O2_TARGET'){send({type:'response',targets:[id]});return;}
   if(state.pending&&state.pending.type==='WAIT_PUBLIC_EXEC'){send({type:'response',targets:[id]});return;}
@@ -998,11 +1098,9 @@ function pickTarget(id){
   let cardName = (state.my_hand&&state.my_hand[selectedCard])?state.my_hand[selectedCard].name:'';
   if(cardName==='找代打'){
     if(daidangTargets===null){ daidangTargets=[id]; let pd=document.getElementById('prompt'); if(pd) pd.innerHTML='<div class="ptitle">🎯 找代打：再点击攻击目标（该角色的攻击范围内）</div>'; return; }
-    send({type:'use_card',card_index:selectedCard,targets:[daidangTargets[0],id]});
-    daidangTargets=null; selectedCard=null; render(); return;
+    setPendingAct(selectedCard,[daidangTargets[0],id],cardName); daidangTargets=null; return;
   }
-  // BUG-303: 多目标攻击卡(放手一搏/AK全场) - 连续点击目标, 再次点击自己或结束确认
-  // 一致性修复: 服务器已下发 ak_all_active, AK全场时任意攻击牌(含碾压黑色牌/实锤)均可多目标
+  // BUG-303: 多目标攻击卡(放手一搏/AK全场) - 连续点击目标, 点击自己取消
   let me=state.players&&state.players[myId];
   let isShenC=me&&me.profession==='神犇';
   let isBlackC=(state.my_hand[selectedCard].suit==='spade'||state.my_hand[selectedCard].suit==='club');
@@ -1010,17 +1108,18 @@ function pickTarget(id){
   let isMulti = (cardName==='放手一搏') || (state.ak_all_active && (cardName==='做法假了'||cardName==='实锤'||(isShenC&&isBlackC&&!isEqC)));
   if(isMulti){
     if(!window.multiTargets) window.multiTargets=[];
+    if(id===myId){ cancelAct(); return; }   // 点击自己取消 (需求17.7)
     if(window.multiTargets.indexOf(id)<0) window.multiTargets.push(id);
     let pd=document.getElementById('prompt');
     if(pd) pd.innerHTML='<div class="ptitle">🎯 多目标攻击：已选 '+window.multiTargets.length+' 名（'+esc(cardName)+'）</div>'+
-      '<button class="btn gold" onclick="confirmMulti()">确认攻击</button> <button class="btn red" onclick="cancelMulti()">取消</button>';
+      '<div class="confirm-bar"><button class="btn gold" onclick="confirmMulti()">✅ 确认攻击</button> <button class="btn red" onclick="cancelMulti()">✖ 取消</button></div>';
     return;
   }
-  send({type:'use_card',card_index:selectedCard,targets:[id]});
-  selectedCard=null; render();
+  if(id===myId){ cancelAct(); return; }   // 单目标点自己取消 (需求17.7 可取消性)
+  setPendingAct(selectedCard,[id],cardName);   // 确认态
 }
-function confirmMulti(){ if(!window.multiTargets||!window.multiTargets.length) return; send({type:'use_card',card_index:selectedCard,targets:window.multiTargets}); window.multiTargets=null; selectedCard=null; render(); }
-function cancelMulti(){ window.multiTargets=null; selectedCard=null; render(); }
+function confirmMulti(){ if(!window.multiTargets||!window.multiTargets.length) return; setPendingAct(selectedCard, window.multiTargets, (state.my_hand&&state.my_hand[selectedCard]?state.my_hand[selectedCard].name:'')); }
+function cancelMulti(){ window.multiTargets=null; pendingAct=null; selectedCard=null; render(); }
 function send(obj){ if(ws&&ws.readyState===1) ws.send(enc(JSON.stringify(obj))); }
 function respond(idx){ send({type:'response',card_index:idx}); }
 function evoSelect(id){ send({type:'response',evo_card_id:id}); }

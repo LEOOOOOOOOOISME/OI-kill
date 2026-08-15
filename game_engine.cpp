@@ -1053,12 +1053,26 @@ bool Room::useCard(int pid, int cardIdx, std::vector<int> targets, json& result)
         result["error"] = "【WA】是闪避牌，只能在被【做法假了】攻击时打出响应，不能在出牌阶段使用";
         return false;
     }
-    // CCF捐款
+    // CCF捐款 (进化CCF金牌: 回复2并摸1; 需求第十章修订: 累计使用3次)
     if (card.name == "CCF捐款") {
+        bool cEvo = card.evolved;
+        int cId = card.id;
         if (player.hp == player.max_hp) { result["error"] = "体力已满，无法使用【CCF捐款】"; return false; }
         discardFromHand(player, cardIdx);
-        player.hp = std::min(player.max_hp, player.hp+1);
-        addLog("💸 " + player.name + " 使用【CCF捐款】回复1点体力（向CCF捐款换1分）");
+        int heal = cEvo ? 2 : 1;
+        player.hp = std::min(player.max_hp, player.hp + heal);
+        if (cEvo) {
+            player.hand.push_back(drawCard());
+            addLog("🏅 " + player.name + " 使用【CCF金牌】回复2点体力并摸1张（捐款到位，金牌到手）");
+        } else {
+            addLog("💸 " + player.name + " 使用【CCF捐款】回复1点体力（向CCF捐款换1分）");
+            // 进化条件: 累计使用3次 → CCF金牌
+            player.ccfDonateCount++;
+            if (player.ccfDonateCount >= 3 && player.evoTotal < 3 && player.evoTurn < 1) {
+                if (std::find(player.evoCandidates.begin(), player.evoCandidates.end(), cId) == player.evoCandidates.end())
+                    player.evoCandidates.push_back(cId);
+            }
+        }
         result["success"] = true; return true;
     }
     // 摸鱼
@@ -1734,6 +1748,7 @@ void Room::resetForStart() {
         p.adminHitCount = p.xuanxueJudgeCount = p.blacklistBlockCount = p.unionFindBlockCount = 0;
         p.coffeeUsedPlayPhase = false;
         p.extraEvo = 0;
+        p.ccfDonateCount = 0;
         for (int i = 0; i < 4; ++i) p.hand.push_back(drawCard());
     }
     currentTurn = 0;
@@ -2842,8 +2857,8 @@ void Room::stepAoe() {
             target.hand.push_back(drawCard());
             addLog(target.name + "【女装】成为AOE锦囊目标，摸1牌");
         }
-        // 防火墙: 免疫AOE锦囊伤害
-        if (target.armor && (target.armor->name == "防火墙" || target.armor->name == "军用防火墙")) {
+        // 防火墙: 免疫AOE锦囊伤害 (需求修订: 【暴力评测机】事件期间不免疫, 且伤害+1)
+        if (activeEvent != "暴力评测机" && target.armor && (target.armor->name == "防火墙" || target.armor->name == "军用防火墙")) {
             addLog("🛡️ " + target.name + "【防火墙】免疫AOE伤害");
             continue;
         }

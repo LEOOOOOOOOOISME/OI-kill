@@ -113,6 +113,7 @@ struct Player {
     int unionFindBlockCount = 0;      // 并查集: 成功抵消杀计数(路径压缩: 1次)
     bool coffeeUsedPlayPhase = false; // 咖啡: 出牌阶段已使用(浓缩咖啡: 使用后本回合造成过伤害)
     int extraEvo = 0;                 // 系统重构: 本回合可额外进化次数
+    int ccfDonateCount = 0;           // CCF捐款: 累计使用次数(进化CCF金牌: 3次, 需求修订)
 };
 
 struct Pending {

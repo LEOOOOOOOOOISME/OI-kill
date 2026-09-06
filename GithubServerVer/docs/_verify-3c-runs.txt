@@ -1,0 +1,732 @@
+﻿node: v24.18.1
+===== RUN 1 =====
+====================================================
+ OI杀 v4.0 引擎自动化测试 (v4-web/test.js)
+====================================================
+ 规格牌堆=120张; DECK_COUNT 实际求和=120张; 回合上限=3000
+
+--- A. 全AI不变量回归 (seeds 1..40, 6人局) ---
+[A seed=01] over=true winner=反贼 turns=51 round=10 | (全部通过)
+[A seed=02] over=true winner=反贼 turns=26 round=7 | (全部通过)
+[A seed=03] over=true winner=反贼 turns=35 round=7 | (全部通过)
+[A seed=04] over=true winner=反贼 turns=30 round=6 | (全部通过)
+[A seed=05] over=true winner=反贼 turns=40 round=8 | (全部通过)
+[A seed=06] over=true winner=主公方 turns=44 round=13 | (全部通过)
+[A seed=07] over=true winner=反贼 turns=33 round=6 | (全部通过)
+[A seed=08] over=true winner=反贼 turns=38 round=10 | (全部通过)
+[A seed=09] over=true winner=主公方 turns=41 round=9 | (全部通过)
+[A seed=10] over=true winner=内奸(摸鱼怪) turns=31 round=6 | (全部通过)
+[A seed=11] over=true winner=反贼 turns=46 round=9 | (全部通过)
+[A seed=12] over=true winner=反贼 turns=27 round=5 | (全部通过)
+[A seed=13] over=true winner=反贼 turns=45 round=10 | (全部通过)
+[A seed=14] over=true winner=内奸(摸鱼怪) turns=58 round=16 | (全部通过)
+[A seed=15] over=true winner=主公方 turns=58 round=13 | (全部通过)
+[A seed=16] over=true winner=反贼 turns=36 round=7 | (全部通过)
+[A seed=17] over=true winner=内奸(摸鱼怪) turns=29 round=6 | (全部通过)
+[A seed=18] over=true winner=反贼 turns=27 round=5 | (全部通过)
+[A seed=19] over=true winner=主公方 turns=43 round=10 | (全部通过)
+[A seed=20] over=true winner=主公方 turns=32 round=8 | (全部通过)
+[A seed=21] over=true winner=主公方 turns=47 round=12 | (全部通过)
+[A seed=22] over=true winner=内奸(摸鱼怪) turns=45 round=14 | (全部通过)
+[A seed=23] over=true winner=主公方 turns=62 round=18 | (全部通过)
+[A seed=24] over=true winner=内奸(摸鱼怪) turns=33 round=8 | (全部通过)
+[A seed=25] over=true winner=内奸(摸鱼怪) turns=28 round=7 | (全部通过)
+[A seed=26] over=true winner=反贼 turns=30 round=6 | (全部通过)
+[A seed=27] over=true winner=反贼 turns=42 round=10 | (全部通过)
+[A seed=28] over=true winner=反贼 turns=22 round=4 | (全部通过)
+[A seed=29] over=true winner=主公方 turns=35 round=9 | (全部通过)
+[A seed=30] over=true winner=反贼 turns=75 round=19 | (全部通过)
+[A seed=31] over=true winner=反贼 turns=39 round=9 | (全部通过)
+[A seed=32] over=true winner=反贼 turns=11 round=2 | (全部通过)
+[A seed=33] over=true winner=主公方 turns=35 round=8 | (全部通过)
+[A seed=34] over=true winner=反贼 turns=28 round=6 | (全部通过)
+[A seed=35] over=true winner=反贼 turns=37 round=7 | (全部通过)
+[A seed=36] over=true winner=反贼 turns=28 round=5 | (全部通过)
+[A seed=37] over=true winner=反贼 turns=83 round=26 | (全部通过)
+[A seed=38] over=true winner=反贼 turns=29 round=5 | (全部通过)
+[A seed=39] over=true winner=反贼 turns=27 round=5 | (全部通过)
+[A seed=40] over=true winner=主公方 turns=54 round=15 | (全部通过)
+A 通过(含120守恒): 40/40; A 通过(除 card-total-120): 40/40; 未通过种子: 无
+
+--- B. 人类流程模拟 (human=0, seeds 101..105) ---
+[B seed=101] over=true winner=内奸(摸鱼怪) turns=25 round=7 人类行动=12 | (全部通过)
+[B seed=102] over=true winner=反贼 turns=62 round=16 人类行动=25 | (全部通过)
+[B seed=103] over=true winner=反贼 turns=72 round=14 人类行动=25 | (全部通过)
+[B seed=104] over=true winner=反贼 turns=13 round=3 人类行动=5 | (全部通过)
+[B seed=105] over=true winner=内奸(摸鱼怪) turns=40 round=9 人类行动=17 | (全部通过)
+B 通过: 5/5
+
+--- C. 定向单测 ---
+[C1 WA响应] PASS
+[C2 卖队友转嫁(响应)] PASS
+[C3 守擂挡刀] PASS
+[C4 题海战术] PASS
+[C5 特判挂起(反制)] PASS
+[C6 特判挂起(放弃反制)] PASS
+C 通过: 6/6
+
+--- 断言失败详情汇总 (每类至多5条现场) ---
+(无任何断言失败)
+
+--- 牌种审计 (A 40局结束态合计: 现存数-配置数; 正=增生 负=流失; 进化改写有噪声) ---
+aoeDodge:-1  aoeAtk:-1  counter:-4  uGuard:-11  dodge:-32  killUnit:-33  attack:-73
+
+=== 汇总: A通过=40/40 (不含120守恒=40/40) | B通过=5/5 | C通过=6/6 | 耗时=0.1s ===
+===== RUN 2 =====
+====================================================
+ OI杀 v4.0 引擎自动化测试 (v4-web/test.js)
+====================================================
+ 规格牌堆=120张; DECK_COUNT 实际求和=120张; 回合上限=3000
+
+--- A. 全AI不变量回归 (seeds 1..40, 6人局) ---
+[A seed=01] over=true winner=反贼 turns=51 round=10 | (全部通过)
+[A seed=02] over=true winner=反贼 turns=26 round=7 | (全部通过)
+[A seed=03] over=true winner=反贼 turns=35 round=7 | (全部通过)
+[A seed=04] over=true winner=反贼 turns=30 round=6 | (全部通过)
+[A seed=05] over=true winner=反贼 turns=40 round=8 | (全部通过)
+[A seed=06] over=true winner=主公方 turns=44 round=13 | (全部通过)
+[A seed=07] over=true winner=反贼 turns=33 round=6 | (全部通过)
+[A seed=08] over=true winner=反贼 turns=38 round=10 | (全部通过)
+[A seed=09] over=true winner=主公方 turns=41 round=9 | (全部通过)
+[A seed=10] over=true winner=内奸(摸鱼怪) turns=31 round=6 | (全部通过)
+[A seed=11] over=true winner=反贼 turns=46 round=9 | (全部通过)
+[A seed=12] over=true winner=反贼 turns=27 round=5 | (全部通过)
+[A seed=13] over=true winner=反贼 turns=45 round=10 | (全部通过)
+[A seed=14] over=true winner=内奸(摸鱼怪) turns=58 round=16 | (全部通过)
+[A seed=15] over=true winner=主公方 turns=58 round=13 | (全部通过)
+[A seed=16] over=true winner=反贼 turns=36 round=7 | (全部通过)
+[A seed=17] over=true winner=内奸(摸鱼怪) turns=29 round=6 | (全部通过)
+[A seed=18] over=true winner=反贼 turns=27 round=5 | (全部通过)
+[A seed=19] over=true winner=主公方 turns=43 round=10 | (全部通过)
+[A seed=20] over=true winner=主公方 turns=32 round=8 | (全部通过)
+[A seed=21] over=true winner=主公方 turns=47 round=12 | (全部通过)
+[A seed=22] over=true winner=内奸(摸鱼怪) turns=45 round=14 | (全部通过)
+[A seed=23] over=true winner=主公方 turns=62 round=18 | (全部通过)
+[A seed=24] over=true winner=内奸(摸鱼怪) turns=33 round=8 | (全部通过)
+[A seed=25] over=true winner=内奸(摸鱼怪) turns=28 round=7 | (全部通过)
+[A seed=26] over=true winner=反贼 turns=30 round=6 | (全部通过)
+[A seed=27] over=true winner=反贼 turns=42 round=10 | (全部通过)
+[A seed=28] over=true winner=反贼 turns=22 round=4 | (全部通过)
+[A seed=29] over=true winner=主公方 turns=35 round=9 | (全部通过)
+[A seed=30] over=true winner=反贼 turns=75 round=19 | (全部通过)
+[A seed=31] over=true winner=反贼 turns=39 round=9 | (全部通过)
+[A seed=32] over=true winner=反贼 turns=11 round=2 | (全部通过)
+[A seed=33] over=true winner=主公方 turns=35 round=8 | (全部通过)
+[A seed=34] over=true winner=反贼 turns=28 round=6 | (全部通过)
+[A seed=35] over=true winner=反贼 turns=37 round=7 | (全部通过)
+[A seed=36] over=true winner=反贼 turns=28 round=5 | (全部通过)
+[A seed=37] over=true winner=反贼 turns=83 round=26 | (全部通过)
+[A seed=38] over=true winner=反贼 turns=29 round=5 | (全部通过)
+[A seed=39] over=true winner=反贼 turns=27 round=5 | (全部通过)
+[A seed=40] over=true winner=主公方 turns=54 round=15 | (全部通过)
+A 通过(含120守恒): 40/40; A 通过(除 card-total-120): 40/40; 未通过种子: 无
+
+--- B. 人类流程模拟 (human=0, seeds 101..105) ---
+[B seed=101] over=true winner=内奸(摸鱼怪) turns=25 round=7 人类行动=12 | (全部通过)
+[B seed=102] over=true winner=反贼 turns=62 round=16 人类行动=25 | (全部通过)
+[B seed=103] over=true winner=反贼 turns=72 round=14 人类行动=25 | (全部通过)
+[B seed=104] over=true winner=反贼 turns=13 round=3 人类行动=5 | (全部通过)
+[B seed=105] over=true winner=内奸(摸鱼怪) turns=40 round=9 人类行动=17 | (全部通过)
+B 通过: 5/5
+
+--- C. 定向单测 ---
+[C1 WA响应] PASS
+[C2 卖队友转嫁(响应)] PASS
+[C3 守擂挡刀] PASS
+[C4 题海战术] PASS
+[C5 特判挂起(反制)] PASS
+[C6 特判挂起(放弃反制)] PASS
+C 通过: 6/6
+
+--- 断言失败详情汇总 (每类至多5条现场) ---
+(无任何断言失败)
+
+--- 牌种审计 (A 40局结束态合计: 现存数-配置数; 正=增生 负=流失; 进化改写有噪声) ---
+aoeDodge:-1  aoeAtk:-1  counter:-4  uGuard:-11  dodge:-32  killUnit:-33  attack:-73
+
+=== 汇总: A通过=40/40 (不含120守恒=40/40) | B通过=5/5 | C通过=6/6 | 耗时=0.1s ===
+===== RUN 3 =====
+====================================================
+ OI杀 v4.0 引擎自动化测试 (v4-web/test.js)
+====================================================
+ 规格牌堆=120张; DECK_COUNT 实际求和=120张; 回合上限=3000
+
+--- A. 全AI不变量回归 (seeds 1..40, 6人局) ---
+[A seed=01] over=true winner=反贼 turns=51 round=10 | (全部通过)
+[A seed=02] over=true winner=反贼 turns=26 round=7 | (全部通过)
+[A seed=03] over=true winner=反贼 turns=35 round=7 | (全部通过)
+[A seed=04] over=true winner=反贼 turns=30 round=6 | (全部通过)
+[A seed=05] over=true winner=反贼 turns=40 round=8 | (全部通过)
+[A seed=06] over=true winner=主公方 turns=44 round=13 | (全部通过)
+[A seed=07] over=true winner=反贼 turns=33 round=6 | (全部通过)
+[A seed=08] over=true winner=反贼 turns=38 round=10 | (全部通过)
+[A seed=09] over=true winner=主公方 turns=41 round=9 | (全部通过)
+[A seed=10] over=true winner=内奸(摸鱼怪) turns=31 round=6 | (全部通过)
+[A seed=11] over=true winner=反贼 turns=46 round=9 | (全部通过)
+[A seed=12] over=true winner=反贼 turns=27 round=5 | (全部通过)
+[A seed=13] over=true winner=反贼 turns=45 round=10 | (全部通过)
+[A seed=14] over=true winner=内奸(摸鱼怪) turns=58 round=16 | (全部通过)
+[A seed=15] over=true winner=主公方 turns=58 round=13 | (全部通过)
+[A seed=16] over=true winner=反贼 turns=36 round=7 | (全部通过)
+[A seed=17] over=true winner=内奸(摸鱼怪) turns=29 round=6 | (全部通过)
+[A seed=18] over=true winner=反贼 turns=27 round=5 | (全部通过)
+[A seed=19] over=true winner=主公方 turns=43 round=10 | (全部通过)
+[A seed=20] over=true winner=主公方 turns=32 round=8 | (全部通过)
+[A seed=21] over=true winner=主公方 turns=47 round=12 | (全部通过)
+[A seed=22] over=true winner=内奸(摸鱼怪) turns=45 round=14 | (全部通过)
+[A seed=23] over=true winner=主公方 turns=62 round=18 | (全部通过)
+[A seed=24] over=true winner=内奸(摸鱼怪) turns=33 round=8 | (全部通过)
+[A seed=25] over=true winner=内奸(摸鱼怪) turns=28 round=7 | (全部通过)
+[A seed=26] over=true winner=反贼 turns=30 round=6 | (全部通过)
+[A seed=27] over=true winner=反贼 turns=42 round=10 | (全部通过)
+[A seed=28] over=true winner=反贼 turns=22 round=4 | (全部通过)
+[A seed=29] over=true winner=主公方 turns=35 round=9 | (全部通过)
+[A seed=30] over=true winner=反贼 turns=75 round=19 | (全部通过)
+[A seed=31] over=true winner=反贼 turns=39 round=9 | (全部通过)
+[A seed=32] over=true winner=反贼 turns=11 round=2 | (全部通过)
+[A seed=33] over=true winner=主公方 turns=35 round=8 | (全部通过)
+[A seed=34] over=true winner=反贼 turns=28 round=6 | (全部通过)
+[A seed=35] over=true winner=反贼 turns=37 round=7 | (全部通过)
+[A seed=36] over=true winner=反贼 turns=28 round=5 | (全部通过)
+[A seed=37] over=true winner=反贼 turns=83 round=26 | (全部通过)
+[A seed=38] over=true winner=反贼 turns=29 round=5 | (全部通过)
+[A seed=39] over=true winner=反贼 turns=27 round=5 | (全部通过)
+[A seed=40] over=true winner=主公方 turns=54 round=15 | (全部通过)
+A 通过(含120守恒): 40/40; A 通过(除 card-total-120): 40/40; 未通过种子: 无
+
+--- B. 人类流程模拟 (human=0, seeds 101..105) ---
+[B seed=101] over=true winner=内奸(摸鱼怪) turns=25 round=7 人类行动=12 | (全部通过)
+[B seed=102] over=true winner=反贼 turns=62 round=16 人类行动=25 | (全部通过)
+[B seed=103] over=true winner=反贼 turns=72 round=14 人类行动=25 | (全部通过)
+[B seed=104] over=true winner=反贼 turns=13 round=3 人类行动=5 | (全部通过)
+[B seed=105] over=true winner=内奸(摸鱼怪) turns=40 round=9 人类行动=17 | (全部通过)
+B 通过: 5/5
+
+--- C. 定向单测 ---
+[C1 WA响应] PASS
+[C2 卖队友转嫁(响应)] PASS
+[C3 守擂挡刀] PASS
+[C4 题海战术] PASS
+[C5 特判挂起(反制)] PASS
+[C6 特判挂起(放弃反制)] PASS
+C 通过: 6/6
+
+--- 断言失败详情汇总 (每类至多5条现场) ---
+(无任何断言失败)
+
+--- 牌种审计 (A 40局结束态合计: 现存数-配置数; 正=增生 负=流失; 进化改写有噪声) ---
+aoeDodge:-1  aoeAtk:-1  counter:-4  uGuard:-11  dodge:-32  killUnit:-33  attack:-73
+
+=== 汇总: A通过=40/40 (不含120守恒=40/40) | B通过=5/5 | C通过=6/6 | 耗时=0.1s ===
+===== RUN 4 =====
+====================================================
+ OI杀 v4.0 引擎自动化测试 (v4-web/test.js)
+====================================================
+ 规格牌堆=120张; DECK_COUNT 实际求和=120张; 回合上限=3000
+
+--- A. 全AI不变量回归 (seeds 1..40, 6人局) ---
+[A seed=01] over=true winner=反贼 turns=51 round=10 | (全部通过)
+[A seed=02] over=true winner=反贼 turns=26 round=7 | (全部通过)
+[A seed=03] over=true winner=反贼 turns=35 round=7 | (全部通过)
+[A seed=04] over=true winner=反贼 turns=30 round=6 | (全部通过)
+[A seed=05] over=true winner=反贼 turns=40 round=8 | (全部通过)
+[A seed=06] over=true winner=主公方 turns=44 round=13 | (全部通过)
+[A seed=07] over=true winner=反贼 turns=33 round=6 | (全部通过)
+[A seed=08] over=true winner=反贼 turns=38 round=10 | (全部通过)
+[A seed=09] over=true winner=主公方 turns=41 round=9 | (全部通过)
+[A seed=10] over=true winner=内奸(摸鱼怪) turns=31 round=6 | (全部通过)
+[A seed=11] over=true winner=反贼 turns=46 round=9 | (全部通过)
+[A seed=12] over=true winner=反贼 turns=27 round=5 | (全部通过)
+[A seed=13] over=true winner=反贼 turns=45 round=10 | (全部通过)
+[A seed=14] over=true winner=内奸(摸鱼怪) turns=58 round=16 | (全部通过)
+[A seed=15] over=true winner=主公方 turns=58 round=13 | (全部通过)
+[A seed=16] over=true winner=反贼 turns=36 round=7 | (全部通过)
+[A seed=17] over=true winner=内奸(摸鱼怪) turns=29 round=6 | (全部通过)
+[A seed=18] over=true winner=反贼 turns=27 round=5 | (全部通过)
+[A seed=19] over=true winner=主公方 turns=43 round=10 | (全部通过)
+[A seed=20] over=true winner=主公方 turns=32 round=8 | (全部通过)
+[A seed=21] over=true winner=主公方 turns=47 round=12 | (全部通过)
+[A seed=22] over=true winner=内奸(摸鱼怪) turns=45 round=14 | (全部通过)
+[A seed=23] over=true winner=主公方 turns=62 round=18 | (全部通过)
+[A seed=24] over=true winner=内奸(摸鱼怪) turns=33 round=8 | (全部通过)
+[A seed=25] over=true winner=内奸(摸鱼怪) turns=28 round=7 | (全部通过)
+[A seed=26] over=true winner=反贼 turns=30 round=6 | (全部通过)
+[A seed=27] over=true winner=反贼 turns=42 round=10 | (全部通过)
+[A seed=28] over=true winner=反贼 turns=22 round=4 | (全部通过)
+[A seed=29] over=true winner=主公方 turns=35 round=9 | (全部通过)
+[A seed=30] over=true winner=反贼 turns=75 round=19 | (全部通过)
+[A seed=31] over=true winner=反贼 turns=39 round=9 | (全部通过)
+[A seed=32] over=true winner=反贼 turns=11 round=2 | (全部通过)
+[A seed=33] over=true winner=主公方 turns=35 round=8 | (全部通过)
+[A seed=34] over=true winner=反贼 turns=28 round=6 | (全部通过)
+[A seed=35] over=true winner=反贼 turns=37 round=7 | (全部通过)
+[A seed=36] over=true winner=反贼 turns=28 round=5 | (全部通过)
+[A seed=37] over=true winner=反贼 turns=83 round=26 | (全部通过)
+[A seed=38] over=true winner=反贼 turns=29 round=5 | (全部通过)
+[A seed=39] over=true winner=反贼 turns=27 round=5 | (全部通过)
+[A seed=40] over=true winner=主公方 turns=54 round=15 | (全部通过)
+A 通过(含120守恒): 40/40; A 通过(除 card-total-120): 40/40; 未通过种子: 无
+
+--- B. 人类流程模拟 (human=0, seeds 101..105) ---
+[B seed=101] over=true winner=内奸(摸鱼怪) turns=25 round=7 人类行动=12 | (全部通过)
+[B seed=102] over=true winner=反贼 turns=62 round=16 人类行动=25 | (全部通过)
+[B seed=103] over=true winner=反贼 turns=72 round=14 人类行动=25 | (全部通过)
+[B seed=104] over=true winner=反贼 turns=13 round=3 人类行动=5 | (全部通过)
+[B seed=105] over=true winner=内奸(摸鱼怪) turns=40 round=9 人类行动=17 | (全部通过)
+B 通过: 5/5
+
+--- C. 定向单测 ---
+[C1 WA响应] PASS
+[C2 卖队友转嫁(响应)] PASS
+[C3 守擂挡刀] PASS
+[C4 题海战术] PASS
+[C5 特判挂起(反制)] PASS
+[C6 特判挂起(放弃反制)] PASS
+C 通过: 6/6
+
+--- 断言失败详情汇总 (每类至多5条现场) ---
+(无任何断言失败)
+
+--- 牌种审计 (A 40局结束态合计: 现存数-配置数; 正=增生 负=流失; 进化改写有噪声) ---
+aoeDodge:-1  aoeAtk:-1  counter:-4  uGuard:-11  dodge:-32  killUnit:-33  attack:-73
+
+=== 汇总: A通过=40/40 (不含120守恒=40/40) | B通过=5/5 | C通过=6/6 | 耗时=0.1s ===
+===== RUN 5 =====
+====================================================
+ OI杀 v4.0 引擎自动化测试 (v4-web/test.js)
+====================================================
+ 规格牌堆=120张; DECK_COUNT 实际求和=120张; 回合上限=3000
+
+--- A. 全AI不变量回归 (seeds 1..40, 6人局) ---
+[A seed=01] over=true winner=反贼 turns=51 round=10 | (全部通过)
+[A seed=02] over=true winner=反贼 turns=26 round=7 | (全部通过)
+[A seed=03] over=true winner=反贼 turns=35 round=7 | (全部通过)
+[A seed=04] over=true winner=反贼 turns=30 round=6 | (全部通过)
+[A seed=05] over=true winner=反贼 turns=40 round=8 | (全部通过)
+[A seed=06] over=true winner=主公方 turns=44 round=13 | (全部通过)
+[A seed=07] over=true winner=反贼 turns=33 round=6 | (全部通过)
+[A seed=08] over=true winner=反贼 turns=38 round=10 | (全部通过)
+[A seed=09] over=true winner=主公方 turns=41 round=9 | (全部通过)
+[A seed=10] over=true winner=内奸(摸鱼怪) turns=31 round=6 | (全部通过)
+[A seed=11] over=true winner=反贼 turns=46 round=9 | (全部通过)
+[A seed=12] over=true winner=反贼 turns=27 round=5 | (全部通过)
+[A seed=13] over=true winner=反贼 turns=45 round=10 | (全部通过)
+[A seed=14] over=true winner=内奸(摸鱼怪) turns=58 round=16 | (全部通过)
+[A seed=15] over=true winner=主公方 turns=58 round=13 | (全部通过)
+[A seed=16] over=true winner=反贼 turns=36 round=7 | (全部通过)
+[A seed=17] over=true winner=内奸(摸鱼怪) turns=29 round=6 | (全部通过)
+[A seed=18] over=true winner=反贼 turns=27 round=5 | (全部通过)
+[A seed=19] over=true winner=主公方 turns=43 round=10 | (全部通过)
+[A seed=20] over=true winner=主公方 turns=32 round=8 | (全部通过)
+[A seed=21] over=true winner=主公方 turns=47 round=12 | (全部通过)
+[A seed=22] over=true winner=内奸(摸鱼怪) turns=45 round=14 | (全部通过)
+[A seed=23] over=true winner=主公方 turns=62 round=18 | (全部通过)
+[A seed=24] over=true winner=内奸(摸鱼怪) turns=33 round=8 | (全部通过)
+[A seed=25] over=true winner=内奸(摸鱼怪) turns=28 round=7 | (全部通过)
+[A seed=26] over=true winner=反贼 turns=30 round=6 | (全部通过)
+[A seed=27] over=true winner=反贼 turns=42 round=10 | (全部通过)
+[A seed=28] over=true winner=反贼 turns=22 round=4 | (全部通过)
+[A seed=29] over=true winner=主公方 turns=35 round=9 | (全部通过)
+[A seed=30] over=true winner=反贼 turns=75 round=19 | (全部通过)
+[A seed=31] over=true winner=反贼 turns=39 round=9 | (全部通过)
+[A seed=32] over=true winner=反贼 turns=11 round=2 | (全部通过)
+[A seed=33] over=true winner=主公方 turns=35 round=8 | (全部通过)
+[A seed=34] over=true winner=反贼 turns=28 round=6 | (全部通过)
+[A seed=35] over=true winner=反贼 turns=37 round=7 | (全部通过)
+[A seed=36] over=true winner=反贼 turns=28 round=5 | (全部通过)
+[A seed=37] over=true winner=反贼 turns=83 round=26 | (全部通过)
+[A seed=38] over=true winner=反贼 turns=29 round=5 | (全部通过)
+[A seed=39] over=true winner=反贼 turns=27 round=5 | (全部通过)
+[A seed=40] over=true winner=主公方 turns=54 round=15 | (全部通过)
+A 通过(含120守恒): 40/40; A 通过(除 card-total-120): 40/40; 未通过种子: 无
+
+--- B. 人类流程模拟 (human=0, seeds 101..105) ---
+[B seed=101] over=true winner=内奸(摸鱼怪) turns=25 round=7 人类行动=12 | (全部通过)
+[B seed=102] over=true winner=反贼 turns=62 round=16 人类行动=25 | (全部通过)
+[B seed=103] over=true winner=反贼 turns=72 round=14 人类行动=25 | (全部通过)
+[B seed=104] over=true winner=反贼 turns=13 round=3 人类行动=5 | (全部通过)
+[B seed=105] over=true winner=内奸(摸鱼怪) turns=40 round=9 人类行动=17 | (全部通过)
+B 通过: 5/5
+
+--- C. 定向单测 ---
+[C1 WA响应] PASS
+[C2 卖队友转嫁(响应)] PASS
+[C3 守擂挡刀] PASS
+[C4 题海战术] PASS
+[C5 特判挂起(反制)] PASS
+[C6 特判挂起(放弃反制)] PASS
+C 通过: 6/6
+
+--- 断言失败详情汇总 (每类至多5条现场) ---
+(无任何断言失败)
+
+--- 牌种审计 (A 40局结束态合计: 现存数-配置数; 正=增生 负=流失; 进化改写有噪声) ---
+aoeDodge:-1  aoeAtk:-1  counter:-4  uGuard:-11  dodge:-32  killUnit:-33  attack:-73
+
+=== 汇总: A通过=40/40 (不含120守恒=40/40) | B通过=5/5 | C通过=6/6 | 耗时=0.1s ===
+===== RUN 6 =====
+====================================================
+ OI杀 v4.0 引擎自动化测试 (v4-web/test.js)
+====================================================
+ 规格牌堆=120张; DECK_COUNT 实际求和=120张; 回合上限=3000
+
+--- A. 全AI不变量回归 (seeds 1..40, 6人局) ---
+[A seed=01] over=true winner=反贼 turns=51 round=10 | (全部通过)
+[A seed=02] over=true winner=反贼 turns=26 round=7 | (全部通过)
+[A seed=03] over=true winner=反贼 turns=35 round=7 | (全部通过)
+[A seed=04] over=true winner=反贼 turns=30 round=6 | (全部通过)
+[A seed=05] over=true winner=反贼 turns=40 round=8 | (全部通过)
+[A seed=06] over=true winner=主公方 turns=44 round=13 | (全部通过)
+[A seed=07] over=true winner=反贼 turns=33 round=6 | (全部通过)
+[A seed=08] over=true winner=反贼 turns=38 round=10 | (全部通过)
+[A seed=09] over=true winner=主公方 turns=41 round=9 | (全部通过)
+[A seed=10] over=true winner=内奸(摸鱼怪) turns=31 round=6 | (全部通过)
+[A seed=11] over=true winner=反贼 turns=46 round=9 | (全部通过)
+[A seed=12] over=true winner=反贼 turns=27 round=5 | (全部通过)
+[A seed=13] over=true winner=反贼 turns=45 round=10 | (全部通过)
+[A seed=14] over=true winner=内奸(摸鱼怪) turns=58 round=16 | (全部通过)
+[A seed=15] over=true winner=主公方 turns=58 round=13 | (全部通过)
+[A seed=16] over=true winner=反贼 turns=36 round=7 | (全部通过)
+[A seed=17] over=true winner=内奸(摸鱼怪) turns=29 round=6 | (全部通过)
+[A seed=18] over=true winner=反贼 turns=27 round=5 | (全部通过)
+[A seed=19] over=true winner=主公方 turns=43 round=10 | (全部通过)
+[A seed=20] over=true winner=主公方 turns=32 round=8 | (全部通过)
+[A seed=21] over=true winner=主公方 turns=47 round=12 | (全部通过)
+[A seed=22] over=true winner=内奸(摸鱼怪) turns=45 round=14 | (全部通过)
+[A seed=23] over=true winner=主公方 turns=62 round=18 | (全部通过)
+[A seed=24] over=true winner=内奸(摸鱼怪) turns=33 round=8 | (全部通过)
+[A seed=25] over=true winner=内奸(摸鱼怪) turns=28 round=7 | (全部通过)
+[A seed=26] over=true winner=反贼 turns=30 round=6 | (全部通过)
+[A seed=27] over=true winner=反贼 turns=42 round=10 | (全部通过)
+[A seed=28] over=true winner=反贼 turns=22 round=4 | (全部通过)
+[A seed=29] over=true winner=主公方 turns=35 round=9 | (全部通过)
+[A seed=30] over=true winner=反贼 turns=75 round=19 | (全部通过)
+[A seed=31] over=true winner=反贼 turns=39 round=9 | (全部通过)
+[A seed=32] over=true winner=反贼 turns=11 round=2 | (全部通过)
+[A seed=33] over=true winner=主公方 turns=35 round=8 | (全部通过)
+[A seed=34] over=true winner=反贼 turns=28 round=6 | (全部通过)
+[A seed=35] over=true winner=反贼 turns=37 round=7 | (全部通过)
+[A seed=36] over=true winner=反贼 turns=28 round=5 | (全部通过)
+[A seed=37] over=true winner=反贼 turns=83 round=26 | (全部通过)
+[A seed=38] over=true winner=反贼 turns=29 round=5 | (全部通过)
+[A seed=39] over=true winner=反贼 turns=27 round=5 | (全部通过)
+[A seed=40] over=true winner=主公方 turns=54 round=15 | (全部通过)
+A 通过(含120守恒): 40/40; A 通过(除 card-total-120): 40/40; 未通过种子: 无
+
+--- B. 人类流程模拟 (human=0, seeds 101..105) ---
+[B seed=101] over=true winner=内奸(摸鱼怪) turns=25 round=7 人类行动=12 | (全部通过)
+[B seed=102] over=true winner=反贼 turns=62 round=16 人类行动=25 | (全部通过)
+[B seed=103] over=true winner=反贼 turns=72 round=14 人类行动=25 | (全部通过)
+[B seed=104] over=true winner=反贼 turns=13 round=3 人类行动=5 | (全部通过)
+[B seed=105] over=true winner=内奸(摸鱼怪) turns=40 round=9 人类行动=17 | (全部通过)
+B 通过: 5/5
+
+--- C. 定向单测 ---
+[C1 WA响应] PASS
+[C2 卖队友转嫁(响应)] PASS
+[C3 守擂挡刀] PASS
+[C4 题海战术] PASS
+[C5 特判挂起(反制)] PASS
+[C6 特判挂起(放弃反制)] PASS
+C 通过: 6/6
+
+--- 断言失败详情汇总 (每类至多5条现场) ---
+(无任何断言失败)
+
+--- 牌种审计 (A 40局结束态合计: 现存数-配置数; 正=增生 负=流失; 进化改写有噪声) ---
+aoeDodge:-1  aoeAtk:-1  counter:-4  uGuard:-11  dodge:-32  killUnit:-33  attack:-73
+
+=== 汇总: A通过=40/40 (不含120守恒=40/40) | B通过=5/5 | C通过=6/6 | 耗时=0.1s ===
+===== RUN 7 =====
+====================================================
+ OI杀 v4.0 引擎自动化测试 (v4-web/test.js)
+====================================================
+ 规格牌堆=120张; DECK_COUNT 实际求和=120张; 回合上限=3000
+
+--- A. 全AI不变量回归 (seeds 1..40, 6人局) ---
+[A seed=01] over=true winner=反贼 turns=51 round=10 | (全部通过)
+[A seed=02] over=true winner=反贼 turns=26 round=7 | (全部通过)
+[A seed=03] over=true winner=反贼 turns=35 round=7 | (全部通过)
+[A seed=04] over=true winner=反贼 turns=30 round=6 | (全部通过)
+[A seed=05] over=true winner=反贼 turns=40 round=8 | (全部通过)
+[A seed=06] over=true winner=主公方 turns=44 round=13 | (全部通过)
+[A seed=07] over=true winner=反贼 turns=33 round=6 | (全部通过)
+[A seed=08] over=true winner=反贼 turns=38 round=10 | (全部通过)
+[A seed=09] over=true winner=主公方 turns=41 round=9 | (全部通过)
+[A seed=10] over=true winner=内奸(摸鱼怪) turns=31 round=6 | (全部通过)
+[A seed=11] over=true winner=反贼 turns=46 round=9 | (全部通过)
+[A seed=12] over=true winner=反贼 turns=27 round=5 | (全部通过)
+[A seed=13] over=true winner=反贼 turns=45 round=10 | (全部通过)
+[A seed=14] over=true winner=内奸(摸鱼怪) turns=58 round=16 | (全部通过)
+[A seed=15] over=true winner=主公方 turns=58 round=13 | (全部通过)
+[A seed=16] over=true winner=反贼 turns=36 round=7 | (全部通过)
+[A seed=17] over=true winner=内奸(摸鱼怪) turns=29 round=6 | (全部通过)
+[A seed=18] over=true winner=反贼 turns=27 round=5 | (全部通过)
+[A seed=19] over=true winner=主公方 turns=43 round=10 | (全部通过)
+[A seed=20] over=true winner=主公方 turns=32 round=8 | (全部通过)
+[A seed=21] over=true winner=主公方 turns=47 round=12 | (全部通过)
+[A seed=22] over=true winner=内奸(摸鱼怪) turns=45 round=14 | (全部通过)
+[A seed=23] over=true winner=主公方 turns=62 round=18 | (全部通过)
+[A seed=24] over=true winner=内奸(摸鱼怪) turns=33 round=8 | (全部通过)
+[A seed=25] over=true winner=内奸(摸鱼怪) turns=28 round=7 | (全部通过)
+[A seed=26] over=true winner=反贼 turns=30 round=6 | (全部通过)
+[A seed=27] over=true winner=反贼 turns=42 round=10 | (全部通过)
+[A seed=28] over=true winner=反贼 turns=22 round=4 | (全部通过)
+[A seed=29] over=true winner=主公方 turns=35 round=9 | (全部通过)
+[A seed=30] over=true winner=反贼 turns=75 round=19 | (全部通过)
+[A seed=31] over=true winner=反贼 turns=39 round=9 | (全部通过)
+[A seed=32] over=true winner=反贼 turns=11 round=2 | (全部通过)
+[A seed=33] over=true winner=主公方 turns=35 round=8 | (全部通过)
+[A seed=34] over=true winner=反贼 turns=28 round=6 | (全部通过)
+[A seed=35] over=true winner=反贼 turns=37 round=7 | (全部通过)
+[A seed=36] over=true winner=反贼 turns=28 round=5 | (全部通过)
+[A seed=37] over=true winner=反贼 turns=83 round=26 | (全部通过)
+[A seed=38] over=true winner=反贼 turns=29 round=5 | (全部通过)
+[A seed=39] over=true winner=反贼 turns=27 round=5 | (全部通过)
+[A seed=40] over=true winner=主公方 turns=54 round=15 | (全部通过)
+A 通过(含120守恒): 40/40; A 通过(除 card-total-120): 40/40; 未通过种子: 无
+
+--- B. 人类流程模拟 (human=0, seeds 101..105) ---
+[B seed=101] over=true winner=内奸(摸鱼怪) turns=25 round=7 人类行动=12 | (全部通过)
+[B seed=102] over=true winner=反贼 turns=62 round=16 人类行动=25 | (全部通过)
+[B seed=103] over=true winner=反贼 turns=72 round=14 人类行动=25 | (全部通过)
+[B seed=104] over=true winner=反贼 turns=13 round=3 人类行动=5 | (全部通过)
+[B seed=105] over=true winner=内奸(摸鱼怪) turns=40 round=9 人类行动=17 | (全部通过)
+B 通过: 5/5
+
+--- C. 定向单测 ---
+[C1 WA响应] PASS
+[C2 卖队友转嫁(响应)] PASS
+[C3 守擂挡刀] PASS
+[C4 题海战术] PASS
+[C5 特判挂起(反制)] PASS
+[C6 特判挂起(放弃反制)] PASS
+C 通过: 6/6
+
+--- 断言失败详情汇总 (每类至多5条现场) ---
+(无任何断言失败)
+
+--- 牌种审计 (A 40局结束态合计: 现存数-配置数; 正=增生 负=流失; 进化改写有噪声) ---
+aoeDodge:-1  aoeAtk:-1  counter:-4  uGuard:-11  dodge:-32  killUnit:-33  attack:-73
+
+=== 汇总: A通过=40/40 (不含120守恒=40/40) | B通过=5/5 | C通过=6/6 | 耗时=0.1s ===
+===== RUN 8 =====
+====================================================
+ OI杀 v4.0 引擎自动化测试 (v4-web/test.js)
+====================================================
+ 规格牌堆=120张; DECK_COUNT 实际求和=120张; 回合上限=3000
+
+--- A. 全AI不变量回归 (seeds 1..40, 6人局) ---
+[A seed=01] over=true winner=反贼 turns=51 round=10 | (全部通过)
+[A seed=02] over=true winner=反贼 turns=26 round=7 | (全部通过)
+[A seed=03] over=true winner=反贼 turns=35 round=7 | (全部通过)
+[A seed=04] over=true winner=反贼 turns=30 round=6 | (全部通过)
+[A seed=05] over=true winner=反贼 turns=40 round=8 | (全部通过)
+[A seed=06] over=true winner=主公方 turns=44 round=13 | (全部通过)
+[A seed=07] over=true winner=反贼 turns=33 round=6 | (全部通过)
+[A seed=08] over=true winner=反贼 turns=38 round=10 | (全部通过)
+[A seed=09] over=true winner=主公方 turns=41 round=9 | (全部通过)
+[A seed=10] over=true winner=内奸(摸鱼怪) turns=31 round=6 | (全部通过)
+[A seed=11] over=true winner=反贼 turns=46 round=9 | (全部通过)
+[A seed=12] over=true winner=反贼 turns=27 round=5 | (全部通过)
+[A seed=13] over=true winner=反贼 turns=45 round=10 | (全部通过)
+[A seed=14] over=true winner=内奸(摸鱼怪) turns=58 round=16 | (全部通过)
+[A seed=15] over=true winner=主公方 turns=58 round=13 | (全部通过)
+[A seed=16] over=true winner=反贼 turns=36 round=7 | (全部通过)
+[A seed=17] over=true winner=内奸(摸鱼怪) turns=29 round=6 | (全部通过)
+[A seed=18] over=true winner=反贼 turns=27 round=5 | (全部通过)
+[A seed=19] over=true winner=主公方 turns=43 round=10 | (全部通过)
+[A seed=20] over=true winner=主公方 turns=32 round=8 | (全部通过)
+[A seed=21] over=true winner=主公方 turns=47 round=12 | (全部通过)
+[A seed=22] over=true winner=内奸(摸鱼怪) turns=45 round=14 | (全部通过)
+[A seed=23] over=true winner=主公方 turns=62 round=18 | (全部通过)
+[A seed=24] over=true winner=内奸(摸鱼怪) turns=33 round=8 | (全部通过)
+[A seed=25] over=true winner=内奸(摸鱼怪) turns=28 round=7 | (全部通过)
+[A seed=26] over=true winner=反贼 turns=30 round=6 | (全部通过)
+[A seed=27] over=true winner=反贼 turns=42 round=10 | (全部通过)
+[A seed=28] over=true winner=反贼 turns=22 round=4 | (全部通过)
+[A seed=29] over=true winner=主公方 turns=35 round=9 | (全部通过)
+[A seed=30] over=true winner=反贼 turns=75 round=19 | (全部通过)
+[A seed=31] over=true winner=反贼 turns=39 round=9 | (全部通过)
+[A seed=32] over=true winner=反贼 turns=11 round=2 | (全部通过)
+[A seed=33] over=true winner=主公方 turns=35 round=8 | (全部通过)
+[A seed=34] over=true winner=反贼 turns=28 round=6 | (全部通过)
+[A seed=35] over=true winner=反贼 turns=37 round=7 | (全部通过)
+[A seed=36] over=true winner=反贼 turns=28 round=5 | (全部通过)
+[A seed=37] over=true winner=反贼 turns=83 round=26 | (全部通过)
+[A seed=38] over=true winner=反贼 turns=29 round=5 | (全部通过)
+[A seed=39] over=true winner=反贼 turns=27 round=5 | (全部通过)
+[A seed=40] over=true winner=主公方 turns=54 round=15 | (全部通过)
+A 通过(含120守恒): 40/40; A 通过(除 card-total-120): 40/40; 未通过种子: 无
+
+--- B. 人类流程模拟 (human=0, seeds 101..105) ---
+[B seed=101] over=true winner=内奸(摸鱼怪) turns=25 round=7 人类行动=12 | (全部通过)
+[B seed=102] over=true winner=反贼 turns=62 round=16 人类行动=25 | (全部通过)
+[B seed=103] over=true winner=反贼 turns=72 round=14 人类行动=25 | (全部通过)
+[B seed=104] over=true winner=反贼 turns=13 round=3 人类行动=5 | (全部通过)
+[B seed=105] over=true winner=内奸(摸鱼怪) turns=40 round=9 人类行动=17 | (全部通过)
+B 通过: 5/5
+
+--- C. 定向单测 ---
+[C1 WA响应] PASS
+[C2 卖队友转嫁(响应)] PASS
+[C3 守擂挡刀] PASS
+[C4 题海战术] PASS
+[C5 特判挂起(反制)] PASS
+[C6 特判挂起(放弃反制)] PASS
+C 通过: 6/6
+
+--- 断言失败详情汇总 (每类至多5条现场) ---
+(无任何断言失败)
+
+--- 牌种审计 (A 40局结束态合计: 现存数-配置数; 正=增生 负=流失; 进化改写有噪声) ---
+aoeDodge:-1  aoeAtk:-1  counter:-4  uGuard:-11  dodge:-32  killUnit:-33  attack:-73
+
+=== 汇总: A通过=40/40 (不含120守恒=40/40) | B通过=5/5 | C通过=6/6 | 耗时=0.1s ===
+===== RUN 9 =====
+====================================================
+ OI杀 v4.0 引擎自动化测试 (v4-web/test.js)
+====================================================
+ 规格牌堆=120张; DECK_COUNT 实际求和=120张; 回合上限=3000
+
+--- A. 全AI不变量回归 (seeds 1..40, 6人局) ---
+[A seed=01] over=true winner=反贼 turns=51 round=10 | (全部通过)
+[A seed=02] over=true winner=反贼 turns=26 round=7 | (全部通过)
+[A seed=03] over=true winner=反贼 turns=35 round=7 | (全部通过)
+[A seed=04] over=true winner=反贼 turns=30 round=6 | (全部通过)
+[A seed=05] over=true winner=反贼 turns=40 round=8 | (全部通过)
+[A seed=06] over=true winner=主公方 turns=44 round=13 | (全部通过)
+[A seed=07] over=true winner=反贼 turns=33 round=6 | (全部通过)
+[A seed=08] over=true winner=反贼 turns=38 round=10 | (全部通过)
+[A seed=09] over=true winner=主公方 turns=41 round=9 | (全部通过)
+[A seed=10] over=true winner=内奸(摸鱼怪) turns=31 round=6 | (全部通过)
+[A seed=11] over=true winner=反贼 turns=46 round=9 | (全部通过)
+[A seed=12] over=true winner=反贼 turns=27 round=5 | (全部通过)
+[A seed=13] over=true winner=反贼 turns=45 round=10 | (全部通过)
+[A seed=14] over=true winner=内奸(摸鱼怪) turns=58 round=16 | (全部通过)
+[A seed=15] over=true winner=主公方 turns=58 round=13 | (全部通过)
+[A seed=16] over=true winner=反贼 turns=36 round=7 | (全部通过)
+[A seed=17] over=true winner=内奸(摸鱼怪) turns=29 round=6 | (全部通过)
+[A seed=18] over=true winner=反贼 turns=27 round=5 | (全部通过)
+[A seed=19] over=true winner=主公方 turns=43 round=10 | (全部通过)
+[A seed=20] over=true winner=主公方 turns=32 round=8 | (全部通过)
+[A seed=21] over=true winner=主公方 turns=47 round=12 | (全部通过)
+[A seed=22] over=true winner=内奸(摸鱼怪) turns=45 round=14 | (全部通过)
+[A seed=23] over=true winner=主公方 turns=62 round=18 | (全部通过)
+[A seed=24] over=true winner=内奸(摸鱼怪) turns=33 round=8 | (全部通过)
+[A seed=25] over=true winner=内奸(摸鱼怪) turns=28 round=7 | (全部通过)
+[A seed=26] over=true winner=反贼 turns=30 round=6 | (全部通过)
+[A seed=27] over=true winner=反贼 turns=42 round=10 | (全部通过)
+[A seed=28] over=true winner=反贼 turns=22 round=4 | (全部通过)
+[A seed=29] over=true winner=主公方 turns=35 round=9 | (全部通过)
+[A seed=30] over=true winner=反贼 turns=75 round=19 | (全部通过)
+[A seed=31] over=true winner=反贼 turns=39 round=9 | (全部通过)
+[A seed=32] over=true winner=反贼 turns=11 round=2 | (全部通过)
+[A seed=33] over=true winner=主公方 turns=35 round=8 | (全部通过)
+[A seed=34] over=true winner=反贼 turns=28 round=6 | (全部通过)
+[A seed=35] over=true winner=反贼 turns=37 round=7 | (全部通过)
+[A seed=36] over=true winner=反贼 turns=28 round=5 | (全部通过)
+[A seed=37] over=true winner=反贼 turns=83 round=26 | (全部通过)
+[A seed=38] over=true winner=反贼 turns=29 round=5 | (全部通过)
+[A seed=39] over=true winner=反贼 turns=27 round=5 | (全部通过)
+[A seed=40] over=true winner=主公方 turns=54 round=15 | (全部通过)
+A 通过(含120守恒): 40/40; A 通过(除 card-total-120): 40/40; 未通过种子: 无
+
+--- B. 人类流程模拟 (human=0, seeds 101..105) ---
+[B seed=101] over=true winner=内奸(摸鱼怪) turns=25 round=7 人类行动=12 | (全部通过)
+[B seed=102] over=true winner=反贼 turns=62 round=16 人类行动=25 | (全部通过)
+[B seed=103] over=true winner=反贼 turns=72 round=14 人类行动=25 | (全部通过)
+[B seed=104] over=true winner=反贼 turns=13 round=3 人类行动=5 | (全部通过)
+[B seed=105] over=true winner=内奸(摸鱼怪) turns=40 round=9 人类行动=17 | (全部通过)
+B 通过: 5/5
+
+--- C. 定向单测 ---
+[C1 WA响应] PASS
+[C2 卖队友转嫁(响应)] PASS
+[C3 守擂挡刀] PASS
+[C4 题海战术] PASS
+[C5 特判挂起(反制)] PASS
+[C6 特判挂起(放弃反制)] PASS
+C 通过: 6/6
+
+--- 断言失败详情汇总 (每类至多5条现场) ---
+(无任何断言失败)
+
+--- 牌种审计 (A 40局结束态合计: 现存数-配置数; 正=增生 负=流失; 进化改写有噪声) ---
+aoeDodge:-1  aoeAtk:-1  counter:-4  uGuard:-11  dodge:-32  killUnit:-33  attack:-73
+
+=== 汇总: A通过=40/40 (不含120守恒=40/40) | B通过=5/5 | C通过=6/6 | 耗时=0.1s ===
+===== RUN 10 =====
+====================================================
+ OI杀 v4.0 引擎自动化测试 (v4-web/test.js)
+====================================================
+ 规格牌堆=120张; DECK_COUNT 实际求和=120张; 回合上限=3000
+
+--- A. 全AI不变量回归 (seeds 1..40, 6人局) ---
+[A seed=01] over=true winner=反贼 turns=51 round=10 | (全部通过)
+[A seed=02] over=true winner=反贼 turns=26 round=7 | (全部通过)
+[A seed=03] over=true winner=反贼 turns=35 round=7 | (全部通过)
+[A seed=04] over=true winner=反贼 turns=30 round=6 | (全部通过)
+[A seed=05] over=true winner=反贼 turns=40 round=8 | (全部通过)
+[A seed=06] over=true winner=主公方 turns=44 round=13 | (全部通过)
+[A seed=07] over=true winner=反贼 turns=33 round=6 | (全部通过)
+[A seed=08] over=true winner=反贼 turns=38 round=10 | (全部通过)
+[A seed=09] over=true winner=主公方 turns=41 round=9 | (全部通过)
+[A seed=10] over=true winner=内奸(摸鱼怪) turns=31 round=6 | (全部通过)
+[A seed=11] over=true winner=反贼 turns=46 round=9 | (全部通过)
+[A seed=12] over=true winner=反贼 turns=27 round=5 | (全部通过)
+[A seed=13] over=true winner=反贼 turns=45 round=10 | (全部通过)
+[A seed=14] over=true winner=内奸(摸鱼怪) turns=58 round=16 | (全部通过)
+[A seed=15] over=true winner=主公方 turns=58 round=13 | (全部通过)
+[A seed=16] over=true winner=反贼 turns=36 round=7 | (全部通过)
+[A seed=17] over=true winner=内奸(摸鱼怪) turns=29 round=6 | (全部通过)
+[A seed=18] over=true winner=反贼 turns=27 round=5 | (全部通过)
+[A seed=19] over=true winner=主公方 turns=43 round=10 | (全部通过)
+[A seed=20] over=true winner=主公方 turns=32 round=8 | (全部通过)
+[A seed=21] over=true winner=主公方 turns=47 round=12 | (全部通过)
+[A seed=22] over=true winner=内奸(摸鱼怪) turns=45 round=14 | (全部通过)
+[A seed=23] over=true winner=主公方 turns=62 round=18 | (全部通过)
+[A seed=24] over=true winner=内奸(摸鱼怪) turns=33 round=8 | (全部通过)
+[A seed=25] over=true winner=内奸(摸鱼怪) turns=28 round=7 | (全部通过)
+[A seed=26] over=true winner=反贼 turns=30 round=6 | (全部通过)
+[A seed=27] over=true winner=反贼 turns=42 round=10 | (全部通过)
+[A seed=28] over=true winner=反贼 turns=22 round=4 | (全部通过)
+[A seed=29] over=true winner=主公方 turns=35 round=9 | (全部通过)
+[A seed=30] over=true winner=反贼 turns=75 round=19 | (全部通过)
+[A seed=31] over=true winner=反贼 turns=39 round=9 | (全部通过)
+[A seed=32] over=true winner=反贼 turns=11 round=2 | (全部通过)
+[A seed=33] over=true winner=主公方 turns=35 round=8 | (全部通过)
+[A seed=34] over=true winner=反贼 turns=28 round=6 | (全部通过)
+[A seed=35] over=true winner=反贼 turns=37 round=7 | (全部通过)
+[A seed=36] over=true winner=反贼 turns=28 round=5 | (全部通过)
+[A seed=37] over=true winner=反贼 turns=83 round=26 | (全部通过)
+[A seed=38] over=true winner=反贼 turns=29 round=5 | (全部通过)
+[A seed=39] over=true winner=反贼 turns=27 round=5 | (全部通过)
+[A seed=40] over=true winner=主公方 turns=54 round=15 | (全部通过)
+A 通过(含120守恒): 40/40; A 通过(除 card-total-120): 40/40; 未通过种子: 无
+
+--- B. 人类流程模拟 (human=0, seeds 101..105) ---
+[B seed=101] over=true winner=内奸(摸鱼怪) turns=25 round=7 人类行动=12 | (全部通过)
+[B seed=102] over=true winner=反贼 turns=62 round=16 人类行动=25 | (全部通过)
+[B seed=103] over=true winner=反贼 turns=72 round=14 人类行动=25 | (全部通过)
+[B seed=104] over=true winner=反贼 turns=13 round=3 人类行动=5 | (全部通过)
+[B seed=105] over=true winner=内奸(摸鱼怪) turns=40 round=9 人类行动=17 | (全部通过)
+B 通过: 5/5
+
+--- C. 定向单测 ---
+[C1 WA响应] PASS
+[C2 卖队友转嫁(响应)] PASS
+[C3 守擂挡刀] PASS
+[C4 题海战术] PASS
+[C5 特判挂起(反制)] PASS
+[C6 特判挂起(放弃反制)] PASS
+C 通过: 6/6
+
+--- 断言失败详情汇总 (每类至多5条现场) ---
+(无任何断言失败)
+
+--- 牌种审计 (A 40局结束态合计: 现存数-配置数; 正=增生 负=流失; 进化改写有噪声) ---
+aoeDodge:-1  aoeAtk:-1  counter:-4  uGuard:-11  dodge:-32  killUnit:-33  attack:-73
+
+=== 汇总: A通过=40/40 (不含120守恒=40/40) | B通过=5/5 | C通过=6/6 | 耗时=0.1s ===
+===== DONE =====

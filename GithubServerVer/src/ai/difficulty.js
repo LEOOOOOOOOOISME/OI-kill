@@ -40,9 +40,9 @@
     normal: {
       label: '普通', thinkMs: [800, 2500], respMs: [800, 2000], gapMs: [250, 900],
       hesitatePct: 0.08, hesitateMs: [800, 1800],
-      errPct: 0.12, randomPickPct: 0.18, retentionBias: 0.6,
+      errPct: 0.12, randomPickPct: 0.18, retentionBias: 0.6, // Fix-Balance 迭代1回退: randomPickPct 0.30 对阵营份额无增益(48.0→48.5), 恢复 0.18
       useIdentityPolicy: true, useThreatModel: true,
-      dodgeHpThreshold: 3, overflowDodge: true, counterValue: 0.55, evDepth: 1,
+      dodgeHpThreshold: 3, overflowDodge: true, counterValue: 0.55, evDepth: 1, // Fix-Balance 迭代4回退: dodgeHpThreshold 4 反而拉低主公方(45.5), 恢复 3
     },
     hard: {
       label: '困难', thinkMs: [800, 1500], respMs: [800, 1500], gapMs: [200, 700],

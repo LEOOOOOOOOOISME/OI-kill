@@ -392,6 +392,19 @@
     for (const s2 of sc) add(s2.v * pol.weights.skill, s2.d);
 
     /* 难度应用与选择 */
+    /* P10a 调参: 单挑(仅剩2人)时主公/内奸改为正面决战 —— 攻击候选加权、装备/部署/欢乐牌
+     * 降权, 避免双方龟缩把对局拖进【保底终局】平票(Fix-Balance R2 起平票先再战一轮,
+     * 仍平票判主公方); 内奸单挑回血已降为每2回合1点(Fix-Balance R1)。 */
+    const aliveCnt = alive(g).length;
+    if (aliveCnt === 2 && (p.identity === 'lord' || p.identity === 'traitor')) {
+      for (const cd of cands) {
+        const d = cd.desc, c = (d.kind === 'play' && d.cardIdx !== undefined) ? p.hand[d.cardIdx] : null;
+        if ((d.kind === 'play' && c && isAttackKey(c.key)) || d.kind === 'kspAttack' || d.kind === 'fangAttack') cd.score += 2.0;
+        else if ((d.kind === 'play' && c && (c.key === 'coffee' || c.key === 'coffeeEvo'))) cd.score += 1.0;
+        else if ((d.kind === 'play' && c && (c.key === 'heal' || c.key === 'healEvo')) && p.identity === 'traitor') cd.score -= 2.0;
+        else if (d.kind === 'equip' || d.kind === 'deploy' || d.kind === 'funFallback') cd.score -= 2.0;
+      }
+    }
     if (!cands.length) return { kind: 'end' };
     for (const cd of cands) cd.score += rnd() * 0.001; // 平局抖动
     cands.sort((a, b) => b.score - a.score);
@@ -490,7 +503,12 @@
         /* 普通闪避: 阈值 + 溢出 + EV */
         if (!canDodge(g, p)) return { kind: 'respondDodge', yes: false, promptId: pid_ };
         let yes = false;
-        if (p.hp <= diff.dodgeHpThreshold) yes = true;
+        /* P10a 调参: 内奸进入单挑(仅剩2人)后不再龟缩磨血 —— 仅濒死一击才闪,
+         * 避免内奸靠攒闪把对局拖进【保底终局】平票(Fix-Balance R2 起再战后仍平票判主公方)。 */
+        const inDuel = g.players.filter(q => !q.dead).length === 2;
+        if (p.identity === 'traitor' && inDuel) {
+          yes = (p.hp - dmg <= 0);
+        } else if (p.hp <= diff.dodgeHpThreshold) yes = true;
         else if (diff.overflowDodge && p.hand.length > SC().handLimit(p)) yes = true;
         else if (diff.useThreatModel && p.hp - dmg <= 0 && !hasSelfSave(g, p)) yes = true;
         else if (diff.useThreatModel) {

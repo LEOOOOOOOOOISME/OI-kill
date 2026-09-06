@@ -14,11 +14,57 @@
 'use strict';
 
 const os = require('node:os');
+const fs = require('node:fs');
+const path = require('node:path');
 const http = require('node:http');
 const readline = require('node:readline');
 const { exec } = require('node:child_process');
 
 const VERSION = 'v4.0.0';
+
+/* ============================================================
+ * SEA 静态资源内存化(仅 SEA bundle 生效; dev 模式零影响)
+ * ------------------------------------------------------------
+ * SEA bundle 由 esbuild 注入三枚编译常量(见 build/bundle-server.mjs):
+ *   globalThis.__OI_SEA__ = true   → 下面的守卫条件在 bundle 内恒真, 且
+ *                                    require('../build/static-map.generated.js')
+ *                                    在打包期被 esbuild 内联进 bundle(无外部文件依赖);
+ *   STATIC_MAP = 1                 → 显式标记(与上一枚常量互为冗余, 共同守卫);
+ *   __dirname = globalThis.__OI_STATIC_ROOT__ → lan/single-server 里的
+ *                                    path.join(__dirname, '..') 被改写为
+ *                                    path.join(globalThis.__OI_STATIC_ROOT__, '..'),
+ *                                    归一化后恰指向本文件解包出的临时目录 → http-static
+ *                                    照常从"磁盘"(=临时目录)读, exe 内不再依赖真实工作目录。
+ * dev 模式(直接 node server/lan-server.js, 无任何 define): 条件恒假,
+ * 不 require 该文件(dev 下可能不存在), 行为与改造前完全一致。
+ * ============================================================ */
+let staticMap = null;
+try {
+  if (globalThis.__OI_SEA__ || (typeof STATIC_MAP !== 'undefined' && STATIC_MAP)) {
+    staticMap = require('../build/static-map.generated.js');
+  }
+} catch (e) { /* dev 环境无该文件时静默 */ }
+
+if (staticMap) {
+  try {
+    const tmpBase = path.join(os.tmpdir(), 'oikill-static-' + process.pid);
+    const rootDir = path.join(tmpBase, 'root'); // index.html 与 src/** 落在此目录
+    fs.mkdirSync(rootDir, { recursive: true });
+    let n = 0;
+    for (const rel of Object.keys(staticMap)) {
+      const target = path.join(rootDir, rel);
+      fs.mkdirSync(path.dirname(target), { recursive: true });
+      fs.writeFileSync(target, staticMap[rel], 'utf8');
+      n++;
+    }
+    // 见上方注释: path.join(__dirname,'..') 归一化后 = rootDir
+    globalThis.__OI_STATIC_ROOT__ = path.join(rootDir, 'sea');
+    console.log('[boot] 静态资源已解包至 ' + rootDir + ' (' + n + ' 个文件)');
+  } catch (e) {
+    console.error('[boot] 静态资源解包失败: ' + (e && e.message));
+    globalThis.__OI_STATIC_ROOT__ = os.tmpdir(); // 兜底: 指向必然存在的目录, 静态路由返回 404 但不致崩溃
+  }
+}
 
 /* 端口候选: 8080 → 8081..8099 → 0(OS 随机) */
 const PORT_CANDIDATES = (() => {

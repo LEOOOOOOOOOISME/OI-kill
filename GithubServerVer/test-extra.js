@@ -1264,15 +1264,17 @@ function E29_victory_branches(c) {
     API.checkVictory(g);
     c.ok(g.over === true && g.winner === '主公方', `反贼内奸全灭主公方胜 (winner=${g.winner})`);
   }
-  // 内奸单挑: 存活2人含内奸 -> 回合开始回1
+  // 内奸单挑: 存活2人含内奸 -> 每2回合回1 (Fix-Balance R1: 原H12"每回合回1"改为"每2回合回1")
   {
     const g = fresh(3);
     const p0 = g.players[0], p1 = g.players[1], p2 = g.players[2];
     p0.identity = 'lord'; p1.identity = 'loyal'; p2.identity = 'traitor';
     p1.dead = true;
     p2.hp = p2.maxHp - 1;
-    API.startTurn(g, 2);
-    c.ok(p2.hp === p2.maxHp, `内奸单挑回合开始回1 (hp=${p2.hp})`);
+    API.startTurn(g, 2); // 单挑第1个回合: 不回血
+    c.ok(p2.hp === p2.maxHp - 1, `单挑第1回合不回血 (hp=${p2.hp}, duelTurns=${p2.duelTurns})`);
+    API.startTurn(g, 2); // 单挑第2个回合: 回1
+    c.ok(p2.hp === p2.maxHp, `单挑第2回合回1 (hp=${p2.hp}, duelTurns=${p2.duelTurns})`);
     c.ok(g.over === false, '单挑阶段对局未结束');
   }
 }
@@ -1292,7 +1294,8 @@ function E30_forceEndByCount(c) {
     API.draw(g, 0, 1);
     c.ok(g.over === true && g.winner === '主公方', `人数多者胜: 主公方 (winner=${g.winner})`);
   }
-  // 主公方1 vs 反贼1 vs 内奸1 -> 内奸单独胜
+  // 主公方1 vs 反贼1 vs 内奸1 -> 平票再战一轮; 再战后仍平票 -> 主公方胜
+  // (Fix-Balance R2: 原FAQ#15"人数相同内奸单独胜"改为"再战一轮, 仍平票判主公方")
   {
     const g = fresh(4);
     const p0 = g.players[0], p1 = g.players[1], p2 = g.players[2], p3 = g.players[3];
@@ -1302,8 +1305,29 @@ function E30_forceEndByCount(c) {
     g.reshuffleCount = 1;
     g.deck = [];
     g.discard = [mk(1291, 'heal', 'heart')];
+    API.draw(g, 0, 1); // 第1次触发: 平票 -> 再战一轮, 对局继续
+    c.ok(g.over === false && g.tiebreakExtra === true, `平票先再战一轮 (over=${g.over}, tiebreakExtra=${g.tiebreakExtra})`);
+    g.deck = [];
+    g.discard = [mk(1292, 'heal', 'heart')];
+    API.draw(g, 0, 1); // 第2次触发: 仍平票 -> 主公方胜
+    c.ok(g.over === true && g.winner === '主公方', `再战后仍平票主公方胜 (winner=${g.winner})`);
+  }
+  // 主公方1 vs 反贼1 (无内奸) -> 同样先再战一轮, 仍平票判主公方 (Fix-Balance R2)
+  {
+    const g = fresh(4);
+    const p0 = g.players[0], p1 = g.players[1], p2 = g.players[2], p3 = g.players[3];
+    p0.identity = 'lord'; p1.identity = 'rebel'; p2.identity = 'traitor'; p3.identity = 'loyal';
+    p2.dead = true; p3.dead = true;
+    for (const p of g.players) if (!p.dead) p.hp = 5;
+    g.reshuffleCount = 1;
+    g.deck = [];
+    g.discard = [mk(1293, 'heal', 'heart')];
     API.draw(g, 0, 1);
-    c.ok(g.over === true && g.winner === '内奸(摸鱼怪)', `人数相同内奸单独胜 (winner=${g.winner})`);
+    c.ok(g.over === false && g.tiebreakExtra === true, `无内奸平票也先再战一轮 (over=${g.over}, tiebreakExtra=${g.tiebreakExtra})`);
+    g.deck = [];
+    g.discard = [mk(1294, 'heal', 'heart')];
+    API.draw(g, 0, 1);
+    c.ok(g.over === true && g.winner === '主公方', `再战后仍平票主公方胜 (winner=${g.winner})`);
   }
 }
 

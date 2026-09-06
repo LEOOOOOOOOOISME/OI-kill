@@ -41,6 +41,7 @@
    * 链上第奇数张特判生效(原锦囊被抵消), 第偶数张使前一张失效(原锦囊继续结算)。
    * 返回 'pending'(人类挂起) / true(原锦囊被抵消) / false(原锦囊继续结算) */
   function counterChain(g, trickKey, srcId, lastCounterer, depth, cont) {
+    if (g.over) return false; // P10(b): 终局后停止连锁(自益锦囊在途牌由 runCounterCont 终局分支结算, 防丢牌/重弃)
     const n = g.players.length;
     for (let i = 1; i <= n; i++) {
       const q = g.players[(lastCounterer + i) % n];
@@ -71,6 +72,7 @@
   }
   /* 受害者特判询问/结算; cont 为反制链冻结后的继续信息 */
   function tryCounter(g, victimId, trickKey, srcId, cont) {
+    if (g.over) return false; // P10(b): 终局后不再发起特判(结算续跑由各效果的终局守卫兜底)
     const p = g.players[victimId];
     if (p.dead) return false;
     const idx = p.hand.findIndex(c => c.key === 'counter' || c.key === 'counterEvo');
@@ -96,6 +98,7 @@
   }
   /* 其他玩家(按座位序, 跳过 caster/excludeId)对自益锦囊的抵消; 返回 'pending'/'countered'/'proceed' */
   function tryCounterOther(g, casterId, trickKey, cont, excludeId) {
+    if (g.over) return 'proceed'; // P10(b): 终局后不再发起第三方特判(自益锦囊牌由调用方结算入堆)
     const n = g.players.length;
     for (let i = 1; i <= n; i++) {
       const q = g.players[(casterId + i) % n];
@@ -145,6 +148,16 @@
   }
   /* 反制链冻结后的收尾: countered=true 表示原锦囊被抵消, false 表示继续结算原锦囊 */
   function runCounterCont(g, cont, countered) {
+    if (g.over) {
+      // P10(b): 终局中断链收尾 — 自益锦囊在途牌若未被 end() 清扫(提示已被 takePrompt 取走,
+      // ctx 仅存调用栈), 此处补弃一张, 牌张不增不减; 题解大会展示牌已由 end() 清扫, 不再触碰(防重弃)。
+      if (cont && cont.kind === 'self' && cont.ctx) {
+        const c = cont.ctx.card;
+        if (c && c.id !== -1) g.discard.push(c);
+        cont.ctx.card = null;
+      }
+      return;
+    }
     if (!cont) return;
     if (cont.kind === 'aoe') {
       const a = cont.ctx;
@@ -658,7 +671,7 @@
 
   /* 题解大会: 按行动顺序轮流选牌(9.2; 特判可抵消任一角色的选牌效果) */
   function harvestStep(g, ctx) {
-    while (ctx.pos < ctx.order.length) {
+    while (!g.over && ctx.pos < ctx.order.length) { // P10(b): 终局停止选牌, 直走收尾清空(展示牌已由 end() 清扫入堆)
       const pid = ctx.order[ctx.pos];
       const p = g.players[pid];
       if (p.dead || ctx.cards.length === 0) { ctx.pos++; continue; }

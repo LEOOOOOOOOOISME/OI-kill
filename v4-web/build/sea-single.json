@@ -1,0 +1,5 @@
+{
+  "main": "dist/bundle-single.cjs",
+  "output": "dist/single.blob",
+  "disableExperimentalSEAWarning": true
+}

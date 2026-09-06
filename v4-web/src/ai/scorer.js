@@ -416,7 +416,7 @@
         return p.hp < p.maxHp ? 2 + frac * 2 : 1.6;
       case 'coffee': case 'coffeeEvo': {
         let v = p.hp <= 2 ? 9 : p.hp <= 3 ? 5 : 1.6; // 濒死自救
-        if (p.identity === 'traitor') v *= 1.5;      // 内奸留进单挑
+        // P10a: 原内奸 ×1.5 单挑囤牌加成移除(与其余身份同权), 削弱内奸 1v1 磨血优势
         if (key === 'coffeeEvo') v += 1.2;
         return v;
       }

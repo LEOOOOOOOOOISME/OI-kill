@@ -85,6 +85,7 @@
       rnd, log: [], over: false, winner: null, round: 1, turn: 0,
       players: [], deck: [], discard: [], event: null, eventSuit: null,
       reshuffleCount: 0,
+      tiebreakExtra: false, // Fix-Balance R2: 保底终局平票"再战一轮"标记(用户裁决A)
       pending: null, // 兼容别名(下方以 accessor 覆盖: 读=第一个未决提示, 写=遗留单槽语义)
       prompts: new Map(), // promptId -> {id,pid,type,ctx,srcId,dmg,deadlineMs,createdAt,...}
       promptSeq: 0, // 提示 id 计数器('pd-<seq>')
@@ -124,6 +125,18 @@
   }
   /* 注册一条提示(多槽): 返回条目对象(供调用方后续补充 ctx/multi 等), 同时记录到 g._lastPrompt */
   function setPrompt(g, data) {
+    if (g.over) {
+      // P10(a): 终局后不再注册新提示(防结算中途终局后残留重入: 如 AOE 续算再次询问人类目标)。
+      // 返回形如条目的哑对象并更新 _lastPrompt, 兼容结算代码读 lastPrompt 补 ctx/multi 的旧写法。
+      const dummy = Object.assign({}, data, {
+        id: 'pd-dummy',
+        pid: (data.pid !== undefined && data.pid !== null) ? data.pid : pidOfPromptType(data),
+        deadlineMs: 0, createdAt: 0,
+        ctx: data.ctx || null,
+      });
+      g._lastPrompt = dummy;
+      return dummy;
+    }
     const id = 'pd-' + (++g.promptSeq);
     const entry = Object.assign({}, data, {
       id,
@@ -169,6 +182,7 @@
   }
   /* 多目标事件提示组(AOE/祖安对线/题解大会的并行人提示): 组状态常驻 g._promptGroups(局末随 g 弃置) */
   function groupOpen(g, groupId, resume) {
+    if (g.over) return null; // P10(a): 终局后不再注册提示组(与 setPrompt 终局闸一致)
     if (!g._promptGroups) g._promptGroups = new Map();
     let gr = g._promptGroups.get(groupId);
     if (!gr) { gr = { resume, resolved: new Set() }; g._promptGroups.set(groupId, gr); }
@@ -228,6 +242,7 @@
         handLimitBonus: prof.id === 'tuling' ? 1 : 0,
         depression: idOrder[i] === 'traitor' ? 1 : 0,
         damageDealt: 0, kills: 0, blockTimes: 0, noDamageRounds: 0,
+        duelTurns: 0, // Fix-Balance R1: 内奸单挑回合计数(每2回合回1点, 用户裁决A)
         usedMentor: false, usedSeal: false, usedDianji: false, usedRetire: false,
         yaxianUsed: false, dodgeUsedThisTurn: false, chaseUsed: false,
         armorCount: {}, // 每回合首次类计数
@@ -274,7 +289,7 @@
         for (const q of g.players) if (!q.dead) { loseHp(g, q.id, 1, null, 'overload'); }
         if (g.over) return;
         // H11: 连续两次洗牌仍无胜负 -> 保底终局
-        if (g.reshuffleCount >= 2) { forceEndByCount(g); return; }
+        if (g.reshuffleCount >= 2 && forceEndByCount(g)) return;
       }
       if (g.deck.length > 0) { const c = g.deck.pop(); if (c) p.hand.push(c); }
     }
@@ -340,12 +355,15 @@
     else p.skipPlay = false;
     // 单位就绪(速攻部署当回合可用,其余下回合可用)
     for (const u of p.units) u.ready = true;
-    // 内奸单挑: 存活2人且含内奸 -> 每回合回1(H12)
+    // 内奸单挑: 存活2人且含内奸 -> 每2回合回1点(Fix-Balance R1, 用户裁决A; 原H12为每回合回1)
     if (p.identity === 'traitor') {
       const alive = g.players.filter(q => !q.dead);
       if (alive.length === 2) {
-        p.hp = Math.min(p.maxHp, p.hp + 1);
-        g.log.push({ t: g.round, txt: `${p.name}【单挑】每回合开始回复1体力`, cls: 'act' });
+        p.duelTurns++;
+        if (p.duelTurns % 2 === 0) {
+          p.hp = Math.min(p.maxHp, p.hp + 1);
+          g.log.push({ t: g.round, txt: `${p.name}【单挑】第${p.duelTurns}回合开始回复1体力(每2回合1点)`, cls: 'act' });
+        }
       }
     }
 
@@ -488,7 +506,7 @@
         g.log.push({ t: g.round, txt: `题海战术!牌堆洗回,全体失去1点体力(评测机过载)`, cls: 'evt' });
         for (const q of g.players) if (!q.dead) { loseHp(g, q.id, 1, null, 'overload'); }
         if (g.over) return;
-        if (g.reshuffleCount >= 2) { forceEndByCount(g); return; }
+        if (g.reshuffleCount >= 2 && forceEndByCount(g)) return;
         card = g.deck.pop();
       } else {
         card = { suit: 'heart', key: 'dodge' };
@@ -505,7 +523,7 @@
         g.log.push({ t: g.round, txt: `题海战术!牌堆洗回,全体失去1点体力(评测机过载)`, cls: 'evt' });
         for (const q of g.players) if (!q.dead) { loseHp(g, q.id, 1, null, 'overload'); }
         if (g.over) return;
-        if (g.reshuffleCount >= 2) { forceEndByCount(g); return; }
+        if (g.reshuffleCount >= 2 && forceEndByCount(g)) return;
       }
       if (g.nextRoundAttackCost > 0) g.nextRoundAttackCost = 0;
     }
@@ -635,7 +653,9 @@
 
   function forceEndByCount(g) {
     const alive = g.players.filter(p => !p.dead);
-    // 2.8/FAQ#15: 存活人数多者胜; 主公方=主公+忠臣合并计数; 人数相同则内奸(若存活)单独获胜
+    // 2.8/FAQ#15: 存活人数多者胜; 主公方=主公+忠臣合并计数。
+    // Fix-Balance R2(用户裁决A): 平票(1:1 及多人)不再立即判内奸胜, 而是先再战一轮;
+    // 再战结束后仍平票 -> 判主公方获胜。返回 true=对局已结束, false=再战一轮(对局继续)。
     const lordSide = alive.filter(p => p.identity === 'lord' || p.identity === 'loyal').length;
     const rebelCnt = alive.filter(p => p.identity === 'rebel').length;
     const traitorCnt = alive.filter(p => p.identity === 'traitor').length;
@@ -648,15 +668,18 @@
       const sideZh = winners[0] === 'lord' ? '主公方' : (winners[0] === 'rebel' ? '反贼' : '内奸');
       g.log.push({ t: g.round, txt: `【保底终局】连续洗牌无胜负: 存活人数多者胜(${sideZh} ${maxCnt}人)`, cls: 'evt' });
       end(g, winners[0]);
-    } else if (traitorCnt > 0) {
-      // 人数相同且内奸存活 -> 内奸单独获胜(FAQ#15)
-      g.log.push({ t: g.round, txt: `【保底终局】人数相同,内奸单独获胜!`, cls: 'evt' });
-      end(g, 'traitor');
-    } else {
-      // 主公方与反贼同人数且无内奸: 需求未定义, 记平局并按主公方结算(现状兜底)
-      g.log.push({ t: g.round, txt: `【保底终局】人数相同且无内奸: 规则未定义,记平局,按主公方结算`, cls: 'evt' });
-      end(g, 'lord');
+      return true;
     }
+    if (!g.tiebreakExtra) {
+      // 平票(含内奸存活): 再战一轮(用户裁决A), 对局继续
+      g.tiebreakExtra = true;
+      g.log.push({ t: g.round, txt: `【保底终局】人数相同(${maxCnt}:${maxCnt}): 再战一轮!`, cls: 'evt' });
+      return false;
+    }
+    // 再战一轮后仍平票 -> 判主公方获胜(用户裁决A)
+    g.log.push({ t: g.round, txt: `【保底终局】再战一轮后仍平票: 主公方获胜!`, cls: 'evt' });
+    end(g, 'lord');
+    return true;
   }
 
   function checkVictory(g) {
@@ -674,12 +697,56 @@
     }
   }
 
+  /* P10(b): 终局清扫在途结算态 — 把结算中途(提示挂起)暂持的真实牌归还弃牌堆,
+   * 保证终局守恒快照=120(不创建/销毁任何牌, 沿用 id!==-1 守恒守卫)。覆盖:
+   *  1) 自益锦囊反制链挂起: counterChain ctx 的 cont.kind==='self' 持 cont.ctx.card
+   *     (draw2/funLie/peek/mull/cheat/recover/funGiveup/funClone 已离手未入堆);
+   *  2) 题解大会展示牌: harvest ctx.cards(提示条目与 _promptGroups 恢复点共享同一数组,
+   *     以 WeakSet 按数组去重, 清空数组防结算续跑重复拾取);
+   * 常规区域(牌堆/弃牌堆/手牌/装备/单位/判定区)一律不触碰; report 提示的 cards
+   * 为视图克隆(无 suit/num), 无 type 字段, 不在清扫之列。 */
+  function sweepTransientCards(g) {
+    const dumped = new WeakSet();
+    const dumpCards = (arr) => {
+      if (!Array.isArray(arr) || dumped.has(arr)) return;
+      dumped.add(arr);
+      for (let i = arr.length - 1; i >= 0; i--) {
+        const c = arr[i];
+        if (c && c.id !== -1) g.discard.push(c);
+        arr.splice(i, 1);
+      }
+    };
+    const dumpCard = (c) => {
+      if (!c || typeof c !== 'object' || dumped.has(c) || c.id === -1) return;
+      dumped.add(c);
+      g.discard.push(c);
+    };
+    const sweepCtx = (ctx) => {
+      if (!ctx || typeof ctx !== 'object') return;
+      if (ctx.type === 'harvest') { dumpCards(ctx.cards); return; }
+      if (ctx.type === 'counterChain' && ctx.cont && typeof ctx.cont === 'object') {
+        const cont = ctx.cont;
+        if (cont.kind === 'self' && cont.ctx) dumpCard(cont.ctx.card);
+        else if (cont.kind === 'harvest' && cont.ctx) dumpCards(cont.ctx.cards);
+      }
+    };
+    for (const e of g.prompts.values()) sweepCtx(e.ctx);
+    if (g._promptGroups) for (const gr of g._promptGroups.values()) {
+      if (gr && gr.resume && gr.resume.ctx) sweepCtx(gr.resume.ctx);
+    }
+  }
+
   function end(g, winnerSide) {
+    sweepTransientCards(g); // P10(b): 在途结算态牌先归还弃牌堆, 终局守恒快照=120
     g.over = true;
     const names = { rebel: '反贼', traitor: '内奸(摸鱼怪)', lord: '主公方' };
     g.winner = names[winnerSide];
     g.log.push({ t: g.round, txt: `=== 游戏结束: ${g.winner} 获胜 ===`, cls: 'evt' });
     settleAchievements(g);
+    // P10(a): 终局清空挂起提示与提示组(防 UI/服务器层在终局后误渲染残留;
+    // setPrompt/groupOpen 已加终局闸, 后续结算代码不会重入)
+    g.prompts.clear();
+    if (g._promptGroups) g._promptGroups.clear();
   }
   /* 成就结算(2.9): 搅局者/护主/掀翻/明君 */
   function settleAchievements(g) {

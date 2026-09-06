@@ -5,7 +5,8 @@
  *     打守擂(爆零/抄袭代码优先级提升); 忠臣疑似暴露前先探明; 主公残血才集火。
  *   - 忠臣: 护主优先 —— 治疗/挡刀/护驾更积极; 主动拆反贼装备与延时牌; 必要时卖血保主。
  *   - 内奸: 平衡两方 —— 反贼占优帮主公方、主公方占优保留反贼; 绝不提前杀主公
- *     (胜利条件要求反贼先全灭); 保留颓废/治疗牌进 1v1; 终局单挑磨死。
+ *     (胜利条件要求反贼先全灭); 保留颓废/治疗牌进 1v1; 终局单挑磨杀(单挑回血
+ *     已降为每2回合1点, Fix-Balance R1)。
  *   - 主公: 自保流 —— 优先装备与治疗; 盲狙试探(打疑似反贼, 吃 -1 惩罚也在所不惜);
  *     善用护驾与首轮免伤窗口。
  * 无上帝视角: 阵营强弱/谁是忠臣均由 scorer.identityBelief 的公开信息推断;
@@ -81,9 +82,11 @@
     const rebelsAlive = rebelsAliveByRule(g);
     const round1 = g.round === 1;
 
-    /* 反贼集火窗口: 主公残血(≤3)或盾破后且非首轮攒牌期 */
+    /* 反贼集火窗口: 主公残血(≤2)或盾破后低血且非首轮攒牌期
+     * (P10a 调参: 原 ≤3/≤4/round≥3≤5 → 收紧为 ≤2/≤3/round≥4≤4, 反贼放缓集火节奏;
+     *  Fix-Balance 迭代3: round≥4≤4 → round≥6≤3, 推迟反贼总攻主公的时点) */
     const focusNow = idn === 'rebel' && lordAlive &&
-      (lordHp <= 3 || (lordHp <= 4 && !lordShieldUp(g)) || (g.round >= 3 && lordHp <= 5));
+      (lordHp <= 2 || (lordHp <= 3 && !lordShieldUp(g)) || (g.round >= 6 && lordHp <= 3));
     const breakShieldFirst = idn === 'rebel' && lordAlive && lordShieldUp(g) && !focusNow;
 
     const policy = {
@@ -113,11 +116,12 @@
 
     switch (idn) {
       case 'rebel': {
-        policy.aggression = 0.85;
+        policy.aggression = 0.8;          // P10a: 0.85→0.8 (攻势放缓)
+        policy.weights.attack = 0.8;      // P10a: 1.0→0.8 (攻击权重降, 反贼节奏放缓; Fix-Balance 迭代2的0.68已回退)
         policy.focusLord = 0.9;
         policy.probeLoyalists = 0.55;
         policy.buildFirst = round1 ? 0.8 : 0.1;
-        policy.selfPreserve = 0.55;
+        policy.selfPreserve = 0.68;       // P10a: 0.55→0.68 (更倾向自保, 少无脑压)
         policy.saveCounterFor = ['skipPlay', 'delaySkipPlay', 'delaySkipDraw', 'o2', 'pierce'];
         policy.retention = { dodge: 0.8, counter: 0.8, heal: 0.5, coffee: 0.8 };
         policy.attackPrio = (tid) => {
@@ -125,17 +129,18 @@
           if (!q || q.dead) return 0;
           const b = scorer().identityBelief(g, pid, tid);
           if (tid === lord.id) {
-            if (focusNow) return 4.2;                                   // 残血集火
-            if (breakShieldFirst) return 2.4;                           // 破盾/打守擂优先
+            if (focusNow) return 3.2;                                   // 残血集火 (P10a: 4.2→3.2; 迭代2的2.9已回退)
+            if (breakShieldFirst) return 2.2;                           // 破盾/打守擂优先 (P10a: 2.4→2.2)
             if (round1 && policy.buildFirst > 0.5) return -1.8;         // 首轮攒牌, 不盲打
-            return 0.9;
+            return 0.2;                                                 // P10a: 0.9→0.2 (非集火期不强压主公, 转去探忠)
           }
-          return 0.7 * b.loyal + 0.15 * b.traitor - 1.6 * b.rebel;      // 探忠, 不打疑似队友
+          return 1.2 * b.loyal + 0.7 * b.traitor - 1.6 * b.rebel;       // 探忠 (P10a: loyal 1.2, traitor 0.5→0.7)
         };
         break;
       }
       case 'loyal': {
-        policy.aggression = 0.75;
+        policy.aggression = 0.85;         // P10a: 0.75→0.85 (拆反贼更主动)
+        policy.weights.attack = 1.05;     // P10a: 1.0→1.05
         policy.protectLord = 1.0;
         policy.useGuardDodge = 1.0;
         policy.selfPreserve = 0.75;
@@ -144,27 +149,29 @@
         policy.attackPrio = (tid) => {
           if (tid === lord.id) return -99;                              // 绝不碰主公
           const b = scorer().identityBelief(g, pid, tid);
-          return 0.9 * b.rebel + 0.4 * b.traitor - 1.3 * b.loyal;       // 拆反贼: 打疑似反贼
+          // P10a: 残局(≤3人)解除"怕打错忠臣"冻结 —— 非主公目标必打(对忠臣而言非主公=敌)
+          const late = g.players.filter(q => !q.dead).length <= 3;
+          return 1.15 * b.rebel + 1.0 * b.traitor - (late ? 0.5 : 1.4) * b.loyal; // (迭代2的1.3已回退)
         };
         break;
       }
       case 'traitor': {
-        policy.aggression = 0.5;
+        policy.aggression = 0.7;   // Fix-Balance 迭代5: 0.5→0.7 (反贼占优时更主动帮主公方清反贼)
         policy.protectLord = 0.35;   // 仅用于"不杀主公"约束
         policy.balancer = 1.0;
         policy.hoardForDuel = 1.0;
-        policy.selfPreserve = 0.85;
+        policy.selfPreserve = 0.45;  // P10a: 0.85→0.45 (自保大降, 内奸中盘更易被打残/打死)
         policy.aoeThreshold = 3;     // 避免误伤失衡
         policy.saveCounterFor = ['o2', 'pierce', 'harvest'];
-        policy.retention = { dodge: 0.9, counter: 1.0, heal: 1.5, coffee: 1.5 };
+        policy.retention = { dodge: 0.9, counter: 1.0, heal: 1.0, coffee: 1.0 }; // P10a: 1.5→1.0
         policy.attackPrio = (tid) => {
           if (tid === lord.id) {
             if (rebelsAlive) return -99;                                // 反贼未灭, 绝不杀主公
             return 1.2;                                                 // 单挑: 磨
           }
           const b = scorer().identityBelief(g, pid, tid);
-          if (bal.rebelStrong) return 0.8 * b.rebel - 0.4 * b.loyal;    // 反贼占优 → 帮主公方
-          return 0.7 * b.loyal - 0.3 * b.rebel;                         // 主公方占优 → 保留/消耗反贼
+          if (bal.rebelStrong) return 1.8 * b.rebel - 0.6 * b.loyal;    // 反贼占优 → 帮主公方 (P10a: 0.8→1.35; Fix-Balance 迭代5: 1.35→1.8, loyal -0.3→-0.6)
+          return 0.2 * b.loyal - 0.3 * b.rebel;                         // 主公方占优 → 少杀忠臣, 少造单挑 (P10a: 0.55→0.2)
         };
         break;
       }
@@ -178,7 +185,9 @@
         policy.retention = { dodge: 1.1, counter: 0.9, heal: 1.2, coffee: 0.8 };
         policy.attackPrio = (tid) => {
           const b = scorer().identityBelief(g, pid, tid);
-          return 1.0 * b.rebel + 0.45 * b.traitor - 0.9 * b.loyal;      // 盲狙: 打疑似反贼(误伤 -1 认了)
+          // P10a: 残局(≤3人)解除"怕打错忠臣"冻结 —— 宁可错打也不能坐视
+          const late = g.players.filter(q => !q.dead).length <= 3;
+          return 1.2 * b.rebel + 1.1 * b.traitor - (late ? 0.3 : 1.0) * b.loyal; // (Fix-Balance 迭代2的1.35/1.25已回退)
         };
         break;
       }

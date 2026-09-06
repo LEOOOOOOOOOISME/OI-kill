@@ -20,7 +20,7 @@
   --table-bg:radial-gradient(ellipse at center,#edf3f9 0%,var(--bg) 72%);
   --modal-mask:rgba(31,35,40,.35); --halo:rgba(26,127,55,.12);
   --switch-on-bg:#eef6ff; --switch-on-line:#7ab4e8; --switch-on-tx:var(--blue);
-  --flash-red:rgba(207,34,46,.55); --flash-blue:rgba(9,105,218,.55); --flash-green:rgba(26,127,55,.55); /* 改进#6 */
+  --flash-red:rgba(207,34,46,.55); --flash-blue:rgba(9,105,218,.55); --flash-green:rgba(26,127,55,.55); --flash-purple:rgba(130,80,223,.55); /* 改进#6 */
   --mono:"Cascadia Code","JetBrains Mono",Consolas,"Courier New",monospace;
 }
 body.dark{ /* 与 :root 变量名一一对应,不得增删 */
@@ -38,7 +38,7 @@ body.dark{ /* 与 :root 变量名一一对应,不得增删 */
   --table-bg:radial-gradient(ellipse at center,#0d141c 0%,var(--bg) 72%);
   --modal-mask:rgba(4,6,9,.72); --halo:rgba(78,201,176,.2);
   --switch-on-bg:#12222e; --switch-on-line:#2d6a80; --switch-on-tx:var(--green);
-  --flash-red:rgba(244,71,71,.55); --flash-blue:rgba(90,167,224,.55); --flash-green:rgba(78,201,176,.55);
+  --flash-red:rgba(244,71,71,.55); --flash-blue:rgba(90,167,224,.55); --flash-green:rgba(78,201,176,.55); --flash-purple:rgba(197,134,192,.55);
 }
 *{margin:0;padding:0;box-sizing:border-box}
 html,body{height:100%}
@@ -185,6 +185,74 @@ body.reduced *{animation-duration:.01s!important;transition-duration:.01s!import
 /* L: 轻量 toast(弃牌失败等提示) */
 .toast{position:fixed;top:64px;left:50%;transform:translateX(-50%);z-index:290;background:var(--panel);border:1px solid var(--red);color:var(--red);padding:10px 18px;border-radius:8px;box-shadow:var(--shadow);font-size:13px;font-weight:600;display:none;max-width:80vw;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;animation:toastIn .25s ease}
 @keyframes toastIn{from{opacity:0;transform:translate(-50%,-8px)}to{opacity:1;transform:translate(-50%,0)}}
+/* ============ P7b: FX 集成样式(fx.js needsCss 26 类全部落地; z 栈: 弹窗300 > 提示290 > 浮字210 > 粒子205 > 飞卡200) ============ */
+/* 瞬时元素(动画结束后由主脚本 animationend/transitionend 统一清理) */
+.fx-particle{position:fixed;z-index:205;width:10px;height:10px;border-radius:50%;background:var(--yellow);box-shadow:0 0 8px var(--yellow);pointer-events:none;animation:sparkle .9s ease forwards}
+.fx-flying{position:fixed;z-index:200;width:84px;height:118px;border-radius:8px;border:1px solid var(--line2);background:var(--card-grad);box-shadow:var(--shadow);opacity:.9;pointer-events:none;transition-property:left,top;animation:fxFlyTilt .6s ease forwards}
+@keyframes fxFlyTilt{0%{transform:rotate(-4deg) scale(.92)}60%{transform:rotate(3deg) scale(1)}100%{transform:rotate(0) scale(1)}}
+/* 伤害/治疗/格挡/倒计时浮字(挂载于目标元素内, 绝对定位+上浮淡出) */
+.fx-dmg-float{position:absolute;left:50%;top:38%;z-index:210;font-family:var(--mono);font-weight:800;font-size:20px;color:var(--red);pointer-events:none;text-shadow:0 2px 6px rgba(0,0,0,.3);white-space:nowrap;animation:fxFloatUp .5s ease forwards}
+.fx-dmg-float-dmg{color:var(--red)}
+.fx-dmg-float-heal{color:var(--green)}
+.fx-dmg-float-guard{color:var(--blue)}
+.fx-dmg-float-count{color:var(--orange);font-size:13px;font-weight:700}
+@keyframes fxFloatUp{0%{opacity:0;transform:translate(-50%,6px) scale(.8)}20%{opacity:1;transform:translate(-50%,0) scale(1.15)}100%{opacity:0;transform:translate(-50%,-46px) scale(1)}}
+/* 座位闪光(复用 P6a flashRed/flashBlue/flashGreen; 紫色为新增) */
+.fx-seat-flash-red{animation:flashRed .5s ease}
+.fx-seat-flash-green{animation:flashGreen .6s ease}
+.fx-seat-flash-blue{animation:flashBlue .5s ease}
+.fx-seat-flash-purple{animation:flashPurple .5s ease}
+@keyframes flashPurple{0%{box-shadow:0 0 0 0 var(--flash-purple)}100%{box-shadow:0 0 0 14px transparent}}
+/* 判定翻转(复用 P6a judgeFlip) */
+.fx-judge-flip{animation:judgeFlip .8s ease}
+/* 拒绝抖动(力度由 fx.js 经 --fx-shake-power 注入) */
+.fx-shake{animation:fxShake .4s ease-in-out 2}
+@keyframes fxShake{0%,100%{transform:none}25%{transform:translateX(calc(var(--fx-shake-power,8px) * -1))}75%{transform:translateX(var(--fx-shake-power,8px))}}
+/* 觉醒三层: body.fx-banner 类=全屏金光; body 直挂的 .fx-banner div=文字横幅; .seat.fx-banner=座位金光 */
+body.fx-banner::before{content:'';position:fixed;inset:0;z-index:290;pointer-events:none;background:radial-gradient(ellipse at center,rgba(255,215,120,.45),transparent 70%);animation:fxBannerFlash 1.2s ease forwards}
+@keyframes fxBannerFlash{0%{opacity:0}25%{opacity:1}100%{opacity:0}}
+body > .fx-banner{position:fixed;left:50%;top:20%;z-index:295;padding:10px 22px;border-radius:10px;border:1px solid var(--yellow);background:var(--panel);color:var(--yellow);font-weight:700;font-size:16px;pointer-events:none;box-shadow:var(--glow);white-space:nowrap;animation:fxBannerIn 1.2s ease forwards}
+@keyframes fxBannerIn{0%{opacity:0;transform:translate(-50%,12px) scale(.9)}15%{opacity:1;transform:translate(-50%,0) scale(1)}85%{opacity:1}100%{opacity:0;transform:translate(-50%,-10px)}}
+.seat.fx-banner{animation:fxEvolveGlow 1.2s ease}
+/* 成就弹出(入场+驻留+退场; fx.js 挂 body 直挂 div, body 本身只加类不做固定定位) */
+body > .fx-ach-pop{position:fixed;top:70px;right:16px;z-index:290;display:flex;align-items:center;gap:8px;padding:10px 16px;border-radius:10px;border:1px solid var(--yellow);background:var(--panel);color:var(--yellow);font-weight:700;font-size:13px;box-shadow:var(--shadow);pointer-events:none;animation:fxAchPop 1s cubic-bezier(.2,.9,.3,1.3) forwards}
+@keyframes fxAchPop{0%{opacity:0;transform:scale(.8) translateY(8px)}12%{opacity:1;transform:none}85%{opacity:1}100%{opacity:0;transform:translateY(-8px)}}
+/* 胜利/败北(复用 P6a victoryIn) */
+.fx-victory-in{animation:victoryIn 1.2s ease}
+/* 波纹(AOE 红 / WA 蓝变体; 挂座位或容器) */
+.fx-wave{position:relative}
+.fx-wave::after{content:'';position:absolute;inset:0;border-radius:14px;border:3px solid var(--flash-red);pointer-events:none;animation:fxWave .6s ease-out forwards}
+.fx-wave-blue::after{border-color:var(--flash-blue)}
+@keyframes fxWave{0%{transform:scale(.35);opacity:.9}100%{transform:scale(1.35);opacity:0}}
+/* 守擂挡刀: 护盾破碎(蓝爆) */
+.fx-shield-break{animation:fxShieldBreak .5s ease}
+@keyframes fxShieldBreak{0%{box-shadow:0 0 0 0 var(--flash-blue)}30%{box-shadow:0 0 0 6px var(--flash-blue)}60%{transform:scale(1.02)}100%{box-shadow:0 0 0 16px transparent;transform:none}}
+/* 阵亡: 座位坍塌 + 身份翻面(两动画叠加) */
+.fx-seat-collapse{animation:fxSeatCollapse .9s ease forwards}
+.fx-identity-flip{animation:fxSeatCollapse .9s ease forwards,fxIdentityFlip .9s ease forwards}
+@keyframes fxSeatCollapse{0%{transform:none;opacity:1}30%{transform:rotate(1.2deg) scale(1.02)}100%{transform:rotate(1deg) scale(.94);opacity:.4}}
+@keyframes fxIdentityFlip{0%{filter:grayscale(0)}50%{filter:grayscale(.8) brightness(1.15)}100%{filter:grayscale(0)}}
+/* 换回合: 座位光环旋转 */
+.fx-turn-halo::before{content:'';position:absolute;inset:-5px;border-radius:16px;border:2px dashed var(--green);pointer-events:none;animation:fxHaloSpin .8s ease forwards}
+@keyframes fxHaloSpin{0%{transform:rotate(0deg);opacity:.9}100%{transform:rotate(160deg);opacity:0}}
+/* 单位交火碎片(座位紫爆) */
+.fx-unit-shards{animation:fxUnitShards .45s ease}
+@keyframes fxUnitShards{0%{box-shadow:0 0 0 0 var(--flash-purple)}35%{box-shadow:0 0 0 8px var(--flash-purple);transform:scale(1.03)}100%{box-shadow:0 0 0 18px transparent;transform:none}}
+/* 装备/进化金光(装备槽发光) */
+.fx-evolve-glow{animation:fxEvolveGlow .8s ease}
+@keyframes fxEvolveGlow{0%{box-shadow:0 0 0 0 rgba(154,103,0,.5)}40%{box-shadow:0 0 0 10px rgba(154,103,0,.25);transform:scale(1.02)}100%{box-shadow:0 0 0 20px transparent;transform:none}}
+/* 单位部署弹跳 */
+.fx-deploy-bounce{animation:fxDeployBounce .5s ease}
+@keyframes fxDeployBounce{0%{transform:translateY(-10px) scale(.9);opacity:.4}45%{transform:translateY(0) scale(1.04);opacity:1}70%{transform:translateY(-3px)}100%{transform:none}}
+/* 聊天气泡(联网; 驻留约1.4s便于阅读后再淡出) */
+.fx-chat-pop{position:fixed;right:16px;bottom:96px;z-index:205;max-width:min(320px,70vw);padding:8px 12px;border-radius:8px;border:1px solid var(--line2);background:var(--panel);color:var(--text);font-size:12px;box-shadow:var(--shadow);pointer-events:none;word-break:break-all;animation:fxChatPop 1.6s ease forwards}
+@keyframes fxChatPop{0%{opacity:0;transform:translateY(6px)}10%{opacity:1;transform:none}88%{opacity:1}100%{opacity:0;transform:translateY(-4px)}}
+/* P7b: 减少动效 —— 用户开关(body.reduced, 沿用 P6a 阻尼规则)+ 系统偏好自动降级 */
+body.reduced .fx-particle,body.reduced .fx-dmg-float,body.reduced .fx-flying,body.reduced .fx-banner,body.reduced .fx-ach-pop,body.reduced .fx-chat-pop{display:none}
+@media (prefers-reduced-motion: reduce){
+  *{animation-duration:.01s!important;transition-duration:.01s!important}
+  .fx-particle,.fx-dmg-float,.fx-flying,.fx-banner,.fx-ach-pop,.fx-chat-pop{display:none}
+}
 /* P6a: 响应式地基——窄屏座位横排顶栏、手牌区保持可用(不建大厅页) */
 @media (max-width:1024px){
   .game-body{grid-template-columns:minmax(0,1fr) 220px}
@@ -201,6 +269,31 @@ body.reduced *{animation-duration:.01s!important;transition-duration:.01s!import
   .player-zone{height:auto;grid-template-columns:minmax(0,1fr);grid-template-rows:auto auto;gap:8px}
   .hand{justify-content:flex-start}
 }
+/* P6b: 局域网大厅(.lobby-* 与 lobby.js 类名一一对应) */
+#page-lobby{position:fixed;inset:0;z-index:400;background:var(--bg);overflow:auto;display:flex;align-items:flex-start;justify-content:center;padding:42px 16px}
+.lobby-panel{width:min(560px,94vw);background:var(--panel);border:1px solid var(--line);border-radius:12px;box-shadow:var(--shadow);padding:22px 24px;display:flex;flex-direction:column;gap:14px}
+.lobby-title{font-size:18px;font-weight:700;color:var(--text)}
+.lobby-url{font-size:12px;color:var(--dim);display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+.lobby-url-text{font-family:var(--mono);background:var(--panel2);padding:4px 8px;border-radius:6px;max-width:56vw;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.lobby-join-row{display:flex;gap:10px;align-items:center;flex-wrap:wrap}
+.lobby-name{flex:1;min-width:150px;padding:8px 12px;border:1px solid var(--line2);border-radius:7px;background:var(--panel);color:var(--text);font-family:inherit;font-size:14px}
+.lobby-spectate{font-size:12px;color:var(--dim);display:flex;align-items:center;gap:4px}
+.lobby-seats{display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px}
+.lobby-seat{border:1px solid var(--line);border-radius:8px;padding:8px 10px;font-size:12px;display:flex;flex-direction:column;gap:3px;background:var(--panel2)}
+.lobby-seat-me{border-color:var(--green);box-shadow:var(--halo)}
+.lobby-seat-empty{opacity:.55}
+.lobby-seat-no{font-family:var(--mono);color:var(--faint);font-size:10px}
+.lobby-seat-name{font-weight:700}
+.lobby-seat-host{color:var(--orange);font-size:10px}
+.lobby-seat-off{color:var(--red);font-size:10px}
+.lobby-config{display:flex;flex-direction:column;gap:8px;padding:10px 12px;border:1px dashed var(--line2);border-radius:8px;background:var(--panel2)}
+.lobby-config-title{font-size:12px;color:var(--dim);font-weight:700}
+.lobby-cfg{display:flex;align-items:center;gap:8px;font-size:12px}
+.lobby-cfg input[type=number]{width:64px;padding:4px 8px;border:1px solid var(--line2);border-radius:6px;background:var(--panel);color:var(--text)}
+.lobby-cfg select{padding:4px 8px;border:1px solid var(--line2);border-radius:6px;background:var(--panel);color:var(--text)}
+.lobby-actions{display:flex;gap:10px}
+.lobby-start{flex:1}
+.lobby-status{font-size:12px;color:var(--dim);min-height:18px}
 </style>
 </head>
 <body>
@@ -212,6 +305,8 @@ body.reduced *{animation-duration:.01s!important;transition-duration:.01s!import
     <span id="turn-info" style="color:var(--green);white-space:nowrap">—</span>
     <div class="switch" id="sw-mode"><span class="on" data-v="zh">OI黑话</span><span data-v="plain">通俗版</span></div>
     <button class="btn sm" id="btn-theme">🌙</button>
+    <button class="btn sm" id="btn-sfx" title="声音开关">🔊</button>
+    <button class="btn sm" id="btn-reduce" title="减少动效">✨ 动效</button>
     <button class="btn sm" id="btn-scale">🔍 缩放</button>
     <button class="btn sm" onclick="restart()">↺ 重开</button>
   </div>
@@ -270,12 +365,249 @@ body.reduced *{animation-duration:.01s!important;transition-duration:.01s!import
 <script src="src/engine/skills.js"></script>
 <script src="src/engine/index.js"></script>
 <script src="game.js"></script>
+<!-- P6b: 接线脚本必须在 game.js 之后(game.js 会把 root.OIKill 重新赋值为扁平引擎 api,
+     先于它挂上的子槽会被覆盖)。ai 文件按 Node 依赖序: difficulty → scorer → identity-policy → heuristics -->
+<script src="src/net/net-api.js"></script>
+<script src="src/ai/difficulty.js"></script>
+<script src="src/ai/scorer.js"></script>
+<script src="src/ai/identity-policy.js"></script>
+<script src="src/ai/heuristics.js"></script>
+<script src="src/ui/adapter.js"></script>
+<script src="src/ui/lobby.js"></script>
+<!-- P7b: fx.js/sfx.js 为纯 CommonJS 模块(module.exports 无浏览器分支)。
+     用一次性 module 垫片装载: 捕获导出后挂到 OIKill.ui.fx / OIKill.sound.sfx, 并立即清除垫片,
+     避免影响其后脚本的 typeof module 探测(engine/ai/net 等均为双模文件)。
+     模块 404(旧 file:// 副本)时捕获为空对象, 主脚本按缺失安全降级。 -->
+<script>(function(){ window.__dsh_cjs = { module: { exports: {} } }; window.module = window.__dsh_cjs.module; })();</script>
+<script src="src/ui/fx.js"></script>
+<script>(function(){ window.__dsh_fxApi = (window.module && window.module.exports) || {}; window.__dsh_cjs.module.exports = {}; })();</script>
+<script src="src/sound/sfx.js"></script>
+<script>(function(){
+  var NS = window.OIKill = window.OIKill || {};
+  NS.ui = NS.ui || {};
+  NS.sound = NS.sound || {};
+  var fxApi = window.__dsh_fxApi;
+  var sfxApi = (window.module && window.module.exports) || {};
+  if (fxApi && typeof fxApi.createFx === 'function') NS.ui.fx = fxApi;
+  if (sfxApi && typeof sfxApi.createSfx === 'function') NS.sound.sfx = sfxApi;
+  delete window.module;
+  delete window.__dsh_cjs;
+  delete window.__dsh_fxApi;
+})();</script>
 <script>
 const O = window.OIKill;
-const HUMAN = 0;
+/* ============ P7b: FX+SFX 集成(动效/音效模块缺失时全部安全降级, 页面其余功能不受影响) ============ */
+const FX = (O.ui && O.ui.fx && typeof O.ui.fx.createFx === 'function') ? O.ui.fx.createFx(document) : null;
+const SFX = (O.sound && O.sound.sfx && typeof O.sound.sfx.createSfx === 'function') ? O.sound.sfx.createSfx() : null;
+let fxReduced = false;                  // 减少动效开关(body.reduced; 同时传给 SFX 做 essential 过滤)
+let lastTickSec = -1;                   // 倒计时秒级滴答去重
+/* FX 事件 kind 在 sfxMap 中无同名音效时的补位(SFX 侧无该事件则静默 no-op) */
+const SOUND_OF = { equip: 'select', deploy: 'drop', playCard: 'drop', wa: 'shield', guardBlock: 'block', unitAttack: 'block', evolve: 'evo', awaken: 'awake', reject: 'error' };
+function fx(kind, payload){
+  const p = (payload && typeof payload === 'object') ? payload : {};
+  if (FX && typeof FX.play === 'function') { try { FX.play(kind, p); } catch (e) { /* 动效异常不阻断游戏 */ } }
+  if (SFX && typeof SFX.play === 'function' && !p.noSfx) {
+    const sk = (p.sfx !== undefined && p.sfx !== null) ? p.sfx : (SOUND_OF[kind] || kind);
+    try {
+      SFX.play(String(sk), { reducedMotion: fxReduced, intensity: (typeof p.intensity === 'number' ? Math.max(0, Math.min(1, p.intensity)) : 0) });
+    } catch (e) { /* 音效异常不阻断游戏 */ }
+  }
+}
+/* 首次用户手势解锁 AudioContext(autoplay 政策; 捕获阶段, 先于其它处理器) */
+let sfxUnlocked = false;
+function tryUnlockSfx(){
+  if (sfxUnlocked || !SFX || typeof SFX.unlock !== 'function') return;
+  sfxUnlocked = true;
+  try { SFX.unlock(); } catch (e) { /* 解锁失败仅保持静音 */ }
+}
+document.addEventListener('pointerdown', tryUnlockSfx, true);
+document.addEventListener('keydown', tryUnlockSfx, true);
+document.addEventListener('touchstart', tryUnlockSfx, true);
+/* 声音开关(顶栏 🔊; 默认音量 0.8) */
+(function(){
+  const btn = document.getElementById('btn-sfx');
+  if (!btn || !SFX) return;
+  let muted = false;
+  try { SFX.setVolume(0.8); } catch (e) { /* 音量初始化失败忽略 */ }
+  btn.addEventListener('click', () => {
+    muted = !muted;
+    try { SFX.setMuted(muted); } catch (e) { /* 静音切换失败忽略 */ }
+    btn.textContent = muted ? '🔇' : '🔊';
+    btn.title = muted ? '声音:关(点击开启)' : '声音:开(点击静音)';
+  });
+})();
+/* 减少动效开关(顶栏 ✨; 默认跟随系统 prefers-reduced-motion) */
+(function(){
+  const btn = document.getElementById('btn-reduce');
+  if (!btn) return;
+  const mq = (typeof matchMedia === 'function') ? matchMedia('(prefers-reduced-motion: reduce)') : null;
+  fxReduced = !!(mq && mq.matches);
+  function applyReduced(){
+    document.body.classList.toggle('reduced', fxReduced);
+    btn.textContent = fxReduced ? '✨ 动效:少' : '✨ 动效:全';
+    btn.title = fxReduced ? '已减少动效(点击恢复)' : '动效全开(点击减少)';
+  }
+  btn.addEventListener('click', () => { fxReduced = !fxReduced; applyReduced(); });
+  applyReduced();
+})();
+/* 通用按钮点击音(委托+捕获; 手牌/座位选择音在各自处理器里用 select) */
+document.addEventListener('click', e => {
+  if (e && e.target && typeof e.target.closest === 'function' && e.target.closest('.btn, .switch span')) fx('click');
+}, true);
+/* 瞬时动效清理: animationend/transitionend 后移除 fx 元素/类(与 fx.js 无定时器设计配套) */
+function cleanupFxNode(e){
+  const el = e && e.target;
+  if (!el || !el.classList || typeof el.classList.contains !== 'function') return;
+  const fxCls = [];
+  el.classList.forEach(c => { if (typeof c === 'string' && c.indexOf('fx-') === 0) fxCls.push(c); });
+  if (!fxCls.length) return;
+  const transient = fxCls.some(c => ['fx-particle','fx-dmg-float','fx-flying','fx-banner','fx-ach-pop','fx-chat-pop'].indexOf(c) >= 0);
+  if (transient && el !== document.body) {
+    if (el.parentNode) el.parentNode.removeChild(el);
+    return;
+  }
+  fxCls.forEach(c => el.classList.remove(c));   // 常驻元素(座位/body)只清类, 便于同类动效再次触发
+}
+document.addEventListener('animationend', cleanupFxNode);
+document.addEventListener('transitionend', cleanupFxNode);
+/* 座位元素定位(差分/关键词动效共用) */
+function seatElOf(id){
+  if (id === null || id === undefined || (typeof id === 'number' && isNaN(id))) return null;
+  return document.querySelector('#seat-grid .seat[data-seat="' + (id === HUMAN ? 'me' : id) + '"]');
+}
+/* 快照: render() 逐动作差异(hp/单位/死亡/觉醒/回合/胜负/手牌) */
+let lastSnap = null;
+function snapOf(v){
+  const me = v.me || {};
+  const hp = {}, units = {}, dead = {}, awaken = {};
+  hp[HUMAN] = me.hp || 0; units[HUMAN] = (me.units || []).length; dead[HUMAN] = !!me.dead; awaken[HUMAN] = !!me.awaken;
+  for (const q of (v.others || [])) { hp[q.id] = q.hp || 0; units[q.id] = (q.units || []).length; dead[q.id] = !!q.dead; awaken[q.id] = !!q.awaken; }
+  return { hp: hp, units: units, dead: dead, awaken: awaken, turn: v.turn, round: v.round, over: !!v.over, hand: (me.hand || []).length };
+}
+const WIN_SIDE_OF = { lord: '主公方', loyal: '主公方', rebel: '反贼', traitor: '内奸(摸鱼怪)' };
+function fxDiff(prev, cur, v){
+  const net = (CLIENT_KIND === 'net');
+  for (const id of Object.keys(cur.hp)) {
+    const sid = +id;
+    const dHp = cur.hp[id] - prev.hp[id];
+    if (dHp < 0) fx('attack', { el: seatElOf(sid), dmg: -dHp, noSfx: net });               // 掉血: 红闪+伤害飘字(联网声音由服务器 sfx 事件负责)
+    else if (dHp > 0) fx('heal', { el: seatElOf(sid), amount: dHp, noSfx: net });         // 回血: 绿闪+治疗飘字
+    const dU = cur.units[id] - prev.units[id];
+    if (dU < 0) fx('unitAttack', { el: seatElOf(sid), sfx: 'block' });                    // 单位阵亡: 碎片+破碎音
+    if (cur.dead[id] && !prev.dead[id]) fx('death', { el: seatElOf(sid), noSfx: net });   // 阵亡: 坍塌+身份翻面
+    if (cur.awaken[id] && !prev.awaken[id]) fx('awaken', { el: seatElOf(sid), sfx: 'awake', noSfx: net }); // 觉醒: 横幅+觉醒音
+  }
+  if (cur.turn !== prev.turn && !cur.over) fx('turn', { el: seatElOf(cur.turn) });        // 换回合: 光环+回合音
+  if (cur.over && !prev.over) {
+    const me = v.me || {};
+    const win = !!(WIN_SIDE_OF[me.identity] && WIN_SIDE_OF[me.identity] === String(v.winner || ''));
+    fx(win ? 'victory' : 'defeat', { el: document.getElementById('table-title'), text: win ? '胜利' : '败北' });
+  }
+  if (cur.hand > prev.hand) fx('draw', { el: document.getElementById('hand') });          // 摸牌: 摸牌音
+}
+/* 日志关键词 → 动效(本地/联网同口径; 联网跳过服务器 room.js FX_RULES 已派生的事件避免双发) */
+const FX_LOG_RULES = [
+  { re: /挡下攻击|挡刀/, kind: 'guardBlock', sfx: 'block' },                            // 守擂/忠臣挡刀
+  { re: /打出WA|出WA!|出WA\/防火墙|当作WA|免费打出WA|闪避/, kind: 'wa', sfx: 'shield' }, // WA(蓝波纹)
+  { re: /反制|特判|反击/, kind: 'counter', sfx: 'counter' },                             // 反击(紫闪)
+  { re: /AOE/, kind: 'aoe', sfx: 'aoe' },                                                // AOE(冲击波)
+  { re: /装备【/, kind: 'equip', sfx: 'select' },                                        // 装备(槽发光; 服务器 'equip' 音在 sfxMap 无效, 两端统一本音)
+  { re: /部署【/, kind: 'deploy', sfx: 'drop' },                                         // 部署(弹跳)
+  { re: /进化!/, kind: 'evolve', sfx: 'evo', netNoSound: true },                         // 进化(联网音效由服务器 sfx 'evo' 负责, 本地补光效)
+  { re: /评测机事件/, kind: 'judge', netSkip: true },                                    // 评测机事件翻牌(服务器派生 sfx+fx)
+  { re: /判定/, kind: 'judge', netSkip: true },                                          // 判定翻牌(服务器派生 sfx+fx)
+];
+function seatElByName(txt){
+  if (!g || !g.players) return null;
+  const list = [];
+  for (const p of g.players) if (p && p.name) list.push({ name: p.name, id: p.id });
+  list.sort((a, b) => b.name.length - a.name.length);
+  for (const x of list) if (txt.indexOf(x.name) >= 0) return seatElOf(x.id);
+  return null;
+}
+function parseLogFx(txt, isNet){
+  if (!txt) return;
+  for (const rule of FX_LOG_RULES) {
+    if (!rule.re.test(txt)) continue;
+    if (isNet && rule.netSkip) return;                     // 服务器已派生同类事件
+    const seat = seatElByName(txt);
+    const el = (rule.kind === 'judge') ? (seat || document.getElementById('event-banner')) : seat;
+    const opts = { el: el };
+    if (rule.netNoSound && isNet) opts.noSfx = true;
+    else if (rule.sfx) opts.sfx = rule.sfx;
+    fx(rule.kind, opts);
+    return;                                                // 每行至多一组(与 room.js FX_RULES 同口径)
+  }
+}
+/* 联网事件流 → 动效/音效(与 render 差分/关键词互为补充; 服务器 sfx 事件为权威声音) */
+function netEventFx(m){
+  const p = m.payload || {};
+  const seat = (typeof p.seat === 'number' && !isNaN(p.seat)) ? seatElOf(p.seat) : null;
+  switch (m.kind) {
+    case 'sfx': {                                          // 服务器权威音效指令(attack/heal/death/judge/awake/evo/achievement/...)
+      const snd = p.sound || '';
+      if (snd && SFX && typeof SFX.play === 'function') {
+        try { SFX.play(String(snd), { reducedMotion: fxReduced, intensity: 0 }); } catch (e) { /* 忽略 */ }
+      }
+      break;
+    }
+    case 'chat': fx('chat', { text: ((p.name ? p.name + ': ' : '') + (p.text || '')) }); break;
+    case 'log': parseLogFx(p.txt || '', CLIENT_KIND === 'net'); break;
+    case 'fx': break;                                      // room.js 兼容缺口: fx 载荷不含语义 kind → 视觉由差分/关键词覆盖, 声音由 sfx 事件覆盖
+    case 'turn': break;                                    // 换回合由 render 差分检测(状态权威), 避免与服务器 turn 事件双发
+    case 'death': fx('death', { el: seat, noSfx: true }); break;                     // 离线离场(类添加幂等, 音效防双发)
+    case 'judge': fx('judge', { el: seat || document.getElementById('event-banner'), noSfx: true }); break;
+    case 'guard-block': fx('guardBlock', { el: seat, noSfx: true }); break;
+    case 'unit-die': fx('unitAttack', { el: seat, noSfx: true }); break;
+    case 'awaken': fx('awaken', { el: seat, noSfx: true }); break;
+    case 'evo': fx('evolve', { el: seat, noSfx: true }); break;
+    case 'event': fx('judge', { el: document.getElementById('event-banner'), noSfx: true }); break;
+    case 'achievement': fx('achievement', { text: (p.name || '成就达成') }); break;
+    default: break;                                        // damage/heal 视觉由 render 差分覆盖; gameover/shutdown 走既有分支
+  }
+}
+let HUMAN = 0;                 // 本地=0; 联网=服务器分配的引擎 pid(setup.pid)
 const NAMES = ['你', '大犇', '出题家', 'AK_King', '初音未来', '摸鱼王'];
 const AVATARS = ['🦾', '🐂', '🧪', '🤖', '🎀', '🐟'];
 let g = null, selected = -1, autoMode = false;
+
+/* ============ P6b: 传输无关门面(本地 LocalClient / 联网 NetClient 统一入口) ============ */
+let C = null;                 // 门面: createLocalClient | createNetClient(UI 只经 C 发动作/响应)
+let CLIENT_KIND = 'local';    // 'local' | 'net'
+const NET = {
+  view: null, setup: null, hello: null, myProf: null,
+  deadline: { turn: 45000, resp: 10000 },   // 服务器权威时限(秒*1000)
+  promptDeadline: 0, turnDeadline: 0, lastTurnKey: '',
+  lobbyEl: null, autoEndAt: 0,
+};
+let startModalShown = false;
+
+/* 统一视图: 本地=引擎 publicView; 联网=最近 state.view(+镜像 pending 覆盖)。
+   render() 及其余 UI 只消费 publicView 形状, 与传输无关 */
+function myView(){
+  if (CLIENT_KIND !== 'net') return g ? O.publicView(g, HUMAN) : null;
+  if (!NET.view) return null;
+  const v = NET.view;
+  if (v.me && NET.myProf && v.me.prof && !v.me.prof.id) v.me.prof = Object.assign({}, v.me.prof, { id: NET.myProf.id });
+  return (g && g.pending) ? Object.assign({}, v, { pending: g.pending }) : v;
+}
+/* 提示归一化: 三形状通用 —— ①联网信封(promptId 顶层, 语义 type 在 payload 内);
+   ②联网合并形状(onPromptMsg 存入镜像的 payload+promptId); ③本地/引擎条目(type 顶层, id 即提示id)。
+   返回 { type, ctx, promptId, pd, timeoutMs }, 响应路径两模式通用 */
+function promptInfo(pd){
+  if (!pd) return null;
+  if (pd.payload && typeof pd.payload === 'object') {
+    return { type: pd.payload.type, ctx: pd.payload.ctx, promptId: pd.promptId, pd: pd.payload, timeoutMs: (typeof pd.timeoutMs === 'number' ? pd.timeoutMs : null) };
+  }
+  const pid = (pd.promptId !== undefined && pd.promptId !== null) ? pd.promptId
+    : (pd.id !== undefined && pd.id !== null) ? pd.id : null;
+  return { type: pd.type, ctx: pd.ctx, promptId: pid, pd: pd, timeoutMs: null };
+}
+function respondPrompt(value){           // 所有提示应答统一出口(适配层按 payload.type 推导响应 kind)
+  const pi = promptInfo(g && g.pending);
+  if (!pi || pi.promptId == null) return;
+  C.sendResponse(pi.promptId, value);
+}
 
 /* ---------- 职业技能表(与引擎 skillUse 的 skillName 对齐) ---------- */
 const SKILLS = {
@@ -379,7 +711,8 @@ function mapLogNames(txt){
 /* ---------- 渲染 ---------- */
 function render(){
   if (!g) return;
-  const v = O.publicView(g, HUMAN);
+  const v = myView();
+  if (!v) return;
   document.getElementById('event-banner').textContent = `${O.suitZh[v.eventSuit]} ${v.event.name} — ${v.event.desc}`;
   document.getElementById('turn-info').textContent = '▶ ' + g.players[v.turn].name + ' 行动中';
   document.getElementById('room-info').textContent = `#${v.round}轮 · ${v.deck}牌 · 弃${v.discard}`;
@@ -454,6 +787,11 @@ function render(){
   document.getElementById('btn-ksp').style.display = (me.weaponKey === 'wKsp' && me.hand.length >= 2 && v.isMyTurn && !v.pending) ? '' : 'none';
   if (mode !== 'fang') document.getElementById('btn-fang-confirm').style.display = 'none';
 
+  // P7b: 逐动作差异 → 动效/音效(仅在真实状态变化时触发; 与联网事件流互补)
+  const curSnap = snapOf(v);
+  if (lastSnap && curSnap.round >= lastSnap.round) fxDiff(lastSnap, curSnap, v);
+  lastSnap = curSnap;
+
   // 行动/响应限时同步
   syncTimers();
 }
@@ -514,12 +852,13 @@ document.getElementById('hand').addEventListener('click', e => {
   const cardEl = e.target.closest('.card');
   if (!cardEl || !g) return;
   const i = +cardEl.dataset.i;
-  const v = O.publicView(g, HUMAN);
-  if (v.pending) return;
+  const v = myView();
+  if (!v || v.pending) return;
   if (discardMode) { toggleDiscardSel(i); return; } // L5: 弃牌选择模式
   const me = v.me;
   const c = me.hand[i];
   if (!c) return;
+  fx('select'); // P7b: 选牌音
   const spec = O.CARDS[c.key] || {};
   const isFun = !!(spec.fun || c.fun);
   // 取消重选
@@ -561,10 +900,15 @@ function tryPlaySelected(i, v, me, c){
     return;
   }
   if (spec.type === 'equip' || spec.type === 'unit' || !NEED_TARGET.includes(c.key)) {
-    // 直接打出
-    const r = spec.type === 'equip' ? O.equipCard(g, HUMAN, i) : spec.type === 'unit' ? O.deployUnit(g, HUMAN, i) : O.playCard(g, HUMAN, i, undefined);
+    // P7b: 直接打出的牌飞向牌桌(装备/单位/无目标牌; 落点音 drop)
+    const flyCardEl = document.querySelector('#hand .card[data-i="' + i + '"]');
+    if (flyCardEl) fx('playCard', { from: flyCardEl, to: document.getElementById('seat-grid') });
+    // 直接打出(经门面: 本地=引擎直驱, 联网=发服务器)
+    const kind = spec.type === 'equip' ? 'equipCard' : spec.type === 'unit' ? 'deployUnit' : 'playCard';
     selected = -1;
-    if (!r.ok && r.why) openModal('无法出牌', `<div style="color:var(--dim)">${esc(r.why)}</div><button class="btn sm" onclick="closeModal()">知道了</button>`);
+    C.sendAction(kind, kind === 'playCard' ? { cardIdx: i, targetId: undefined } : { cardIdx: i }).then(r => {
+      if (r && r.ok === false && r.why) openModal('无法出牌', `<div style="color:var(--dim)">${esc(r.why)}</div><button class="btn sm" onclick="closeModal()">知道了</button>`);
+    });
     afterAction();
     return;
   }
@@ -584,6 +928,7 @@ document.getElementById('seat-grid').addEventListener('click', e => {
   if (!seatEl) return;
   const id = +seatEl.dataset.seat;
   if (isNaN(id) || !seatTargetable.has(id)) return;
+  fx('select'); // P7b: 目标选择音
   if (mode === 'fang') {
     const idx = fangTargets.indexOf(id);
     if (idx >= 0) fangTargets.splice(idx, 1);
@@ -593,29 +938,38 @@ document.getElementById('seat-grid').addEventListener('click', e => {
     return;
   }
   if (mode === 'ksp') {
-    const r = O.kspAttack(g, HUMAN, id);
+    C.sendAction('kspAttack', { targetId: id }).then(r => {
+      if (r && r.ok === false && r.why) openModal('无法出牌', `<div style="color:var(--dim)">${esc(r.why)}</div><button class="btn sm" onclick="closeModal()">知道了</button>`);
+    });
     selected = -1; seatTargetable.clear(); mode = 'single';
-    if (!r.ok && r.why) openModal('无法出牌', `<div style="color:var(--dim)">${esc(r.why)}</div><button class="btn sm" onclick="closeModal()">知道了</button>`);
     afterAction();
     return;
   }
   if (mode === 'skill') {
-    const r = O.skillUse(g, HUMAN, skillTargetName, id);
+    const skillName = skillTargetName;
     selected = -1; seatTargetable.clear(); mode = 'single';
-    const sk = SKILLS[O.publicView(g, HUMAN).me.prof && O.publicView(g, HUMAN).me.prof.id];
-    if (!r.ok && r.why) openModal('无法使用技能', `<div style="color:var(--dim)">${esc(r.why)}</div><button class="btn sm" onclick="closeModal()">知道了</button>`);
-    else if (sk && sk.limited) usedLimited.add(sk.name);
+    const v0 = myView();
+    const sk = SKILLS[v0 && v0.me && v0.me.prof && v0.me.prof.id];
+    C.sendAction('skillUse', { name: skillName, targetId: id }).then(r => {
+      if (r && r.ok === false && r.why) openModal('无法使用技能', `<div style="color:var(--dim)">${esc(r.why)}</div><button class="btn sm" onclick="closeModal()">知道了</button>`);
+      else if (sk && sk.limited) usedLimited.add(sk.name);
+    });
     afterAction();
     return;
   }
-  const r = O.playCard(g, HUMAN, selected, id);
+  const cardIdx = selected;
+  const flyFrom = document.querySelector('#hand .card[data-i="' + cardIdx + '"]'); // P7b: 卡牌飞向目标座位
+  if (flyFrom) fx('playCard', { from: flyFrom, to: seatEl });
   selected = -1; seatTargetable.clear(); mode = 'single';
-  if (!r.ok && r.why) openModal('无法出牌', `<div style="color:var(--dim)">${esc(r.why)}</div><button class="btn sm" onclick="closeModal()">知道了</button>`);
+  C.sendAction('playCard', { cardIdx: cardIdx, targetId: id }).then(r => {
+    if (r && r.ok === false && r.why) openModal('无法出牌', `<div style="color:var(--dim)">${esc(r.why)}</div><button class="btn sm" onclick="closeModal()">知道了</button>`);
+  });
   afterAction();
 });
 
 document.getElementById('btn-ksp').addEventListener('click', () => {
-  if (O.publicView(g, HUMAN).pending) return;
+  const vK = myView();
+  if (!vK || vK.pending) return;
   mode = 'ksp'; selected = -1;
   seatTargetable.clear();
   for (const q of g.players) if (q.id !== HUMAN && !q.dead) seatTargetable.add(q.id);
@@ -624,17 +978,20 @@ document.getElementById('btn-ksp').addEventListener('click', () => {
 });
 document.getElementById('btn-fang-confirm').addEventListener('click', () => {
   if (fangTargets.length < 1) return;
-  const r = O.fangAttack(g, HUMAN, fangTargets, fangCardIdx);
+  const tgtIds = fangTargets.slice(), cardIdx = fangCardIdx;
   document.getElementById('btn-fang-confirm').style.display = 'none';
   selected = -1; seatTargetable.clear(); mode = 'single'; fangTargets = [];
-  if (!r.ok && r.why) openModal('无法出牌', `<div style="color:var(--dim)">${esc(r.why)}</div><button class="btn sm" onclick="closeModal()">知道了</button>`);
+  C.sendAction('fangAttack', { targetIds: tgtIds, cardIdx: cardIdx }).then(r => {
+    if (r && r.ok === false && r.why) openModal('无法出牌', `<div style="color:var(--dim)">${esc(r.why)}</div><button class="btn sm" onclick="closeModal()">知道了</button>`);
+  });
   afterAction();
 });
 
 // 欢乐牌: 打出(走现有出牌逻辑)
 document.getElementById('btn-fun-play').addEventListener('click', () => {
   if (selected < 0) return;
-  const v = O.publicView(g, HUMAN);
+  const v = myView();
+  if (!v) return;
   const c = v.me.hand[selected];
   if (!c) { hideFunButtons(); selected = -1; render(); return; }
   hideFunButtons();
@@ -646,8 +1003,9 @@ document.getElementById('btn-fun-discard').addEventListener('click', () => {
   const i = selected;
   selected = -1; seatTargetable.clear(); mode = 'single';
   hideFunButtons();
-  const r = O.discardFun(g, HUMAN, i);
-  if (r && !r.ok && r.why) openModal('无法弃置', `<div style="color:var(--dim)">${esc(r.why)}</div><button class="btn sm" onclick="closeModal()">知道了</button>`);
+  C.sendAction('discardFun', { cardIdx: i }).then(r => {
+    if (r && r.ok === false && r.why) openModal('无法弃置', `<div style="color:var(--dim)">${esc(r.why)}</div><button class="btn sm" onclick="closeModal()">知道了</button>`);
+  });
   afterAction();
 });
 
@@ -655,7 +1013,8 @@ document.getElementById('btn-fun-discard').addEventListener('click', () => {
 document.getElementById('skill-row').addEventListener('click', e => {
   const btn = e.target.closest('[data-skill]');
   if (!btn || btn.disabled || !g) return;
-  const v = O.publicView(g, HUMAN);
+  const v = myView();
+  if (!v) return;
   const sk = SKILLS[v.me.prof && v.me.prof.id];
   if (!sk || btn.dataset.skill !== sk.name) return;
   if (sk.target) {
@@ -666,17 +1025,30 @@ document.getElementById('skill-row').addEventListener('click', e => {
     hint(`【${esc(sk.zh)}】点击一个目标座位 · ESC取消`);
     return;
   }
-  const r = O.skillUse(g, HUMAN, sk.name, undefined);
-  if (!r.ok && r.why) openModal('无法使用技能', `<div style="color:var(--dim)">${esc(r.why)}</div><button class="btn sm" onclick="closeModal()">知道了</button>`);
-  else if (sk.limited) usedLimited.add(sk.name);
+  C.sendAction('skillUse', { name: sk.name }).then(r => {
+    if (r && r.ok === false && r.why) openModal('无法使用技能', `<div style="color:var(--dim)">${esc(r.why)}</div><button class="btn sm" onclick="closeModal()">知道了</button>`);
+    else if (sk.limited) usedLimited.add(sk.name);
+  });
   afterAction();
 });
 
 let discardMode = false;
 const discardSel = new Set();
+/* 结束回合收尾(经门面 endTurn: 本地=弃牌阶段+endTurn, 联网=服务器侧同口径) */
+function finishEndTurn(){
+  stopTimers();
+  selected = -1; seatTargetable.clear(); mode = 'single'; fangTargets = [];
+  hideFunButtons();
+  document.getElementById('btn-fang-confirm').style.display = 'none';
+  C.sendAction('endTurn', {}).then(() => {
+    if (tutorOn) tutorIdx = (tutorIdx + 1) % TUTOR_TIPS.length;
+    afterAction(); // 本地: 泵驱动 AI + 进化检测; 联网: 服务器权威驱动, 仅刷新
+  });
+}
 function endPlayFlow(){
-  if (!g || O.publicView(g, HUMAN).pending) return;
-  const v = O.publicView(g, HUMAN);
+  if (!g) return;
+  const v = myView();
+  if (!v || v.pending) return;
   const over = Math.max(0, v.me.hand.length - v.me.handLimit);
   if (over > 0 && !discardMode) {
     // 进入弃牌选择模式(L5)
@@ -689,26 +1061,21 @@ function endPlayFlow(){
   }
   if (discardMode) {
     if (discardSel.size !== over) return; // 数量不符
-    const r = O.discardCards ? O.discardCards(g, HUMAN, [...discardSel]) : { ok: false, why: '引擎不支持自选弃牌' };
-    if (r && r.ok === false) { toast(r.why || '弃牌失败,请重新选择'); return; } // L: 失败保留选择并提示,不清除
-    discardMode = false; discardSel.clear();
-    document.getElementById('btn-end').textContent = '✓ 结束出牌';
+    const idxs = [...discardSel];
+    C.sendAction('discardCards', { indices: idxs }).then(r => {
+      if (r && r.ok === false) { toast(r.why || '弃牌失败,请重新选择'); return; } // L: 失败保留选择并提示,不清除
+      discardMode = false; discardSel.clear();
+      document.getElementById('btn-end').textContent = '✓ 结束出牌';
+      finishEndTurn();
+    });
+    return;
   }
-  stopTimers();
-  O.discardPhase(g, HUMAN);
-  selected = -1; seatTargetable.clear(); mode = 'single'; fangTargets = [];
-  hideFunButtons();
-  document.getElementById('btn-fang-confirm').style.display = 'none';
-  O.endTurn(g, HUMAN);
-  if (tutorOn) tutorIdx = (tutorIdx + 1) % TUTOR_TIPS.length;
-  // 进化选择(若有候选)
-  const ew = O.publicView(g, HUMAN).evoWait || g.evoWait;
-  if (ew) { renderEvoPrompt(ew); return; }
-  runAi();
+  finishEndTurn();
 }
 function toggleDiscardSel(i){
   if (discardSel.has(i)) discardSel.delete(i); else discardSel.add(i);
-  const v = O.publicView(g, HUMAN);
+  const v = myView();
+  if (!v) return;
   const over = Math.max(0, v.me.hand.length - v.me.handLimit);
   document.getElementById('btn-end').textContent = `✓ 确认弃牌(${discardSel.size}/${over})`;
   render();
@@ -729,7 +1096,7 @@ document.getElementById('btn-auto').addEventListener('click', () => {
 });
 document.addEventListener('keydown', e => {
   if (e.key !== 'Escape') return;
-  const v = g ? O.publicView(g, HUMAN) : null;
+  const v = myView();
   if (v && v.pending && isMyPending(v.pending)) { respondNo(); return; }
   document.getElementById('btn-cancel').click();
   closeModal();
@@ -775,7 +1142,7 @@ function renderAoePrompt(v, count){
     </div>`);
 }
 function aoeResp(yes){
-  O.respondAoeResp(g, HUMAN, yes);
+  respondPrompt({ yes: yes });
   closeModal();
   afterAction();
 }
@@ -789,7 +1156,7 @@ function renderReportPrompt(v, count){
     </div>`);
 }
 function reportPick(cardKey){
-  if (O.respondReport) O.respondReport(g, HUMAN, cardKey);
+  respondPrompt({ cardKey: cardKey });
   closeModal();
   afterAction();
 }
@@ -799,12 +1166,6 @@ function harvestChoices(pd){
   if (pd && pd.ctx && pd.ctx.cards) return pd.ctx.cards;
   if (pd && pd.choices) return pd.choices;
   return [];
-}
-function harvestRespond(pd, choiceKey){
-  if (!O.respondHarvest) return;
-  // 契约: O.respondHarvest({choiceKey}); 兼容旧签名 (g, pid, choiceKey)
-  if (O.respondHarvest.length >= 3) O.respondHarvest(g, pd && pd.victim != null ? pd.victim : HUMAN, choiceKey);
-  else O.respondHarvest({ choiceKey: choiceKey });
 }
 function harvestFirstKey(pd){
   const cs = harvestChoices(pd);
@@ -829,7 +1190,7 @@ function renderHarvestPrompt(v, count){
     <div style="display:flex;gap:10px"><button class="btn sm" onclick="harvestPick(null)">⏭ 跳过(不选)</button></div>`);
 }
 function harvestPick(choiceKey){
-  harvestRespond(g && g.pending, choiceKey);
+  respondPrompt({ choiceKey: choiceKey });
   closeModal();
   afterAction();
 }
@@ -854,20 +1215,22 @@ function renderDodgePrompt(v, count){
     </div>${extra}`);
 }
 function dodgeResp(yes){
-  O.respondDodge(g, HUMAN, yes);
+  respondPrompt({ yes: yes });
   closeModal();
   afterAction();
 }
 function dodgeHelperResp(helperId){
-  O.respondDodge(g, HUMAN, true, helperId);
+  respondPrompt({ yes: true, helperId: helperId });
   closeModal();
   afterAction();
 }
 function betrayResp(targetId){
-  // 卖队友: 把本次攻击转给 targetId(引擎响应用牌,一局一次)
-  if (O.respondBetray) {
-    const r = O.respondBetray(g, HUMAN, targetId);
-    if (!r.ok && r.why) openModal('无法转嫁', `<div style="color:var(--dim)">${esc(r.why)}</div><button class="btn sm" onclick="closeModal()">知道了</button>`);
+  // 卖队友: 把本次攻击转给 targetId(引擎响应用牌,一局一次; 适配层按 value.targetId 走 betray 路径)
+  const pi = promptInfo(g && g.pending);
+  if (pi && pi.promptId != null) {
+    C.sendResponse(pi.promptId, { targetId: targetId }).then(r => {
+      if (r && r.ok === false && r.why) openModal('无法转嫁', `<div style="color:var(--dim)">${esc(r.why)}</div><button class="btn sm" onclick="closeModal()">知道了</button>`);
+    });
   }
   closeModal();
   afterAction();
@@ -886,7 +1249,7 @@ function renderCounterPrompt(v, count){
     </div>`);
 }
 function counterResp(yes){
-  O.respondCounter(g, HUMAN, yes);
+  respondPrompt({ yes: yes });
   closeModal();
   afterAction();
 }
@@ -907,26 +1270,17 @@ function renderWeaponPrompt(v, count, type){
     </div>`);
 }
 function yesNoResp(type, yes){
-  if (type === 'cold') O.respondCold(g, HUMAN, yes);
-  else if (type === 'bbst') O.respondBbst(g, HUMAN, yes);
-  else if (type === 'chase') O.respondChase(g, HUMAN, yes);
-  else if (type === 'guard') O.respondGuard(g, HUMAN, yes);
+  respondPrompt({ yes: yes }); // 适配层按提示 payload.type 推导 cold/bbst/chase/guard 响应 kind
   closeModal();
   afterAction();
 }
 function respondNo(){
-  const pd = g && g.pending;
-  if (!pd) return;
-  if (pd.type === 'dodge') O.respondDodge(g, HUMAN, false);
-  else if (pd.type === 'counter') O.respondCounter(g, HUMAN, false);
-  else if (pd.type === 'cold') O.respondCold(g, HUMAN, false);
-  else if (pd.type === 'bbst') O.respondBbst(g, HUMAN, false);
-  else if (pd.type === 'chase') O.respondChase(g, HUMAN, false);
-  else if (pd.type === 'guard') O.respondGuard(g, HUMAN, false);
-  else if (pd.type === 'aoeResp') O.respondAoeResp(g, HUMAN, false);
-  else if (pd.type === 'report') { if (O.respondReport) O.respondReport(g, HUMAN, null); } // M2: 超时默认放弃举报(不弃牌)
-  else if (pd.type === 'harvest') harvestRespond(pd, harvestFirstKey(pd));                   // H: 超时默认选第1张
-  else return;
+  const pi = promptInfo(g && g.pending);
+  if (!pi || pi.promptId == null) return;
+  let value = { yes: false };
+  if (pi.type === 'report') value = { cardKey: null };                                  // M2: 超时默认放弃举报(不弃牌)
+  else if (pi.type === 'harvest') value = { choiceKey: harvestFirstKey(pi.pd) };        // H: 超时默认选第1张
+  C.sendResponse(pi.promptId, value);
   closeModal();
   afterAction();
 }
@@ -944,82 +1298,50 @@ function renderEvoPrompt(ew){
     <button class="btn sm" onclick="evoPick(null)">放弃进化</button>`);
 }
 function evoPick(key){
-  O.evolvePick(g, HUMAN, key);
+  const pi = promptInfo(g && g.pending);
+  if (pi && pi.promptId != null && pi.type === 'evo') C.sendResponse(pi.promptId, { key: key }); // 适配层转 evolvePick 动作
+  else C.sendAction('evolvePick', { key: key });
   closeModal();
-  runAi();
+  afterAction();
 }
 
 function afterAction(){
-  const v = O.publicView(g, HUMAN);
+  if (CLIENT_KIND === 'net') { render(); return; } // 联网: AI/回合推进由服务器权威驱动, 客户端只刷新
+  const v = myView();
+  if (!v) return;
   if (v.pending && isMyPending(v.pending)) { render(); return; }
   const ew = v.evoWait || g.evoWait;
   if (ew) { renderEvoPrompt(ew); render(); return; }
-  if (g.turn === HUMAN && !g.players[HUMAN].dead && !v.over) { render(); return; }
-  runAi();
-}
-
-function runAi(){
-  let guard = 0;
-  while (!g.over && g.turn !== HUMAN && guard++ < 300) {
-    const pid = g.turn;
-    O.judgePhase(g, pid);
-    O.drawPhase(g, pid);
-    O.aiTurn(g, pid);
-    if (g.pending) {
-      if (isMyPending(g.pending)) break; // 等人类响应
-      const pd = g.pending;
-      aiRespondPending();
-      if (g.pending === pd) break;       // 未知 pending 类型: 防死循环
-      continue;
-    }
-  }
-  // 人类回合开始
-  if (!g.over && g.turn === HUMAN && !g.players[HUMAN].dead) {
-    O.judgePhase(g, HUMAN);
-    O.drawPhase(g, HUMAN);
-  }
-  render();
-  if (autoMode && !g.over) autoLoop();
-}
-function aiRespondPending(){
-  const pd = g.pending;
-  if (!pd) return;
-  if (pd.type === 'dodge') O.respondDodge(g, pd.target, true);
-  else if (pd.type === 'counter') O.respondCounter(g, pd.victim, true);
-  else if (pd.type === 'cold') O.respondCold(g, pd.target, false);
-  else if (pd.type === 'bbst') O.respondBbst(g, pd.target, true);
-  else if (pd.type === 'chase') O.respondChase(g, pd.target, true);
-  else if (pd.type === 'guard') O.respondGuard(g, pd.target, true);
-  else if (pd.type === 'aoeResp') O.respondAoeResp(g, pd.victim, true);
-  else if (pd.type === 'report') { const cs = (pd.ctx && pd.ctx.cards) || []; if (O.respondReport && cs.length) O.respondReport(g, pd.victim, cs[0].key); }
-  else if (pd.type === 'harvest') harvestRespond(pd, harvestFirstKey(pd));
+  render(); // 本地: 其余座位由 LocalClient 的 AI 泵驱动(与旧 runAi 决策序列一致, 只是改由门面泵统一推进)
 }
 
 function autoLoop(){
   if (!autoMode) return;
   if (!g || g.over) return;
-  const v = O.publicView(g, HUMAN);
-  const pd = v.pending;
-  if (pd && isMyPending(pd)) {
-    if (pd.type === 'dodge') O.respondDodge(g, HUMAN, true);
-    else if (pd.type === 'counter') O.respondCounter(g, HUMAN, true);
-    else if (pd.type === 'cold') O.respondCold(g, HUMAN, true);
-    else if (pd.type === 'bbst') O.respondBbst(g, HUMAN, true);
-    else if (pd.type === 'chase') O.respondChase(g, HUMAN, true);
-    else if (pd.type === 'guard') O.respondGuard(g, HUMAN, true);
-    else if (pd.type === 'aoeResp') O.respondAoeResp(g, HUMAN, true);
-    else if (pd.type === 'report') { const cs = (pd.ctx && pd.ctx.cards) || []; if (O.respondReport && cs.length) O.respondReport(g, HUMAN, cs[0].key); }
-    else if (pd.type === 'harvest') harvestRespond(pd, harvestFirstKey(pd));
+  const v = myView();
+  if (!v) { setTimeout(autoLoop, 400); return; }
+  let acted = false;
+  // 1) 我的未决提示: 默认「是/第一选择」(与旧自动托管语义一致)
+  const pi = promptInfo(v.pending);
+  if (v.pending && isMyPending(v.pending) && pi && pi.promptId != null) {
+    if (pi.type === 'report') { const cs = (pi.pd.ctx && pi.pd.ctx.cards) || []; respondPrompt({ cardKey: cs.length ? cs[0].key : null }); }
+    else if (pi.type === 'harvest') respondPrompt({ choiceKey: harvestFirstKey(pi.pd) });
+    else if (pi.type === 'evo') respondPrompt({ key: (pi.pd.keys && pi.pd.keys.length) ? pi.pd.keys[0] : null });
+    else respondPrompt({ yes: true });
+    closeModal();
+    acted = true;
   }
-  const ew = v.evoWait || g.evoWait;
-  if (ew && ew.keys && ew.keys.length) {
-    const k0 = ew.keys[0];
-    O.evolvePick(g, HUMAN, typeof k0 === 'string' ? k0 : k0.base);
+  // 2) 进化选择(取第一个候选)
+  const ew = v.evoWait || (g.evoWait || null);
+  if (ew && ew.keys && ew.keys.length) { evoPick(typeof ew.keys[0] === 'string' ? ew.keys[0] : ew.keys[0].base); acted = true; }
+  // 3) 我的回合: 结束回合(本地泵/服务器继续驱动其余座位; 1.5s 节流防连发)
+  if (v.isMyTurn && !v.me.dead && (!NET.autoEndAt || Date.now() - NET.autoEndAt > 1500)) {
+    NET.autoEndAt = Date.now();
+    C.sendAction('endTurn', {});
+    acted = true;
   }
-  if (g.turn === HUMAN && !g.players[HUMAN].dead) {
-    O.aiTurn(g, HUMAN);
-  }
-  setTimeout(() => { afterAction(); }, 400);
+  if (acted) afterAction();
+  setTimeout(autoLoop, 400);
 }
 
 /* ---------- 行动限时(铁律5): 出牌45秒 / 响应10秒 ---------- */
@@ -1027,19 +1349,30 @@ let timerKind = null, timerDeadline = 0;
 function stopTimers(){ timerKind = null; timerDeadline = 0; }
 function syncTimers(){
   if (!g || g.over) { stopTimers(); updateTimerDisplay(); return; }
-  const v = O.publicView(g, HUMAN);
+  const v = myView();
+  if (!v) { stopTimers(); updateTimerDisplay(); return; }
   const pd = v.pending;
   let want = null, secs = 0;
-  if (pd && isMyPending(pd)) { want = 'resp:' + pdKeyOf(pd); secs = 10; }
-  else if (v.isMyTurn && !v.me.dead && !autoMode) { want = 'turn:' + g.turn + ':' + g.round; secs = 45; }
+  if (pd && isMyPending(pd)) { want = 'resp:' + pdKeyOf(pd); secs = CLIENT_KIND === 'net' ? Math.max(1, Math.round(NET.deadline.resp / 1000)) : 10; }
+  else if (v.isMyTurn && !v.me.dead && !autoMode) { want = 'turn:' + g.turn + ':' + g.round; secs = CLIENT_KIND === 'net' ? Math.max(1, Math.round(NET.deadline.turn / 1000)) : 45; }
   if (want === null) stopTimers();
-  else if (timerKind !== want) { timerKind = want; timerDeadline = Date.now() + secs * 1000; }
+  else if (timerKind !== want) {
+    timerKind = want;
+    // 联网: 用服务器权威截止(提示 timeoutMs / state.deadline.turn); 本地: 沿用本地 45s/10s 计时
+    if (CLIENT_KIND === 'net') {
+      const isResp = want.indexOf('resp:') === 0;
+      const dl = isResp ? NET.promptDeadline : NET.turnDeadline;
+      timerDeadline = dl || (Date.now() + secs * 1000);
+    } else {
+      timerDeadline = Date.now() + secs * 1000;
+    }
+  }
   updateTimerDisplay();
 }
 function updateTimerDisplay(){
   const el = document.getElementById('timer-info');
   const ring = document.getElementById('timer-ring');
-  if (!timerKind) { if (el) el.textContent = ''; if (ring) ring.style.display = 'none'; return; }
+  if (!timerKind) { if (el) el.textContent = ''; if (ring) ring.style.display = 'none'; lastTickSec = -1; return; }
   const left = Math.max(0, Math.ceil((timerDeadline - Date.now()) / 1000));
   const isResp = timerKind.indexOf('resp:') === 0;
   if (el) {
@@ -1059,6 +1392,14 @@ function updateTimerDisplay(){
   }
   const rc = document.getElementById('resp-count');
   if (rc) { rc.textContent = '⏱ ' + left + 's'; rc.style.color = left <= 3 ? 'var(--red)' : 'var(--dim)'; }
+  // P7b: 每秒倒计时滴答(intensity 随截止临近升高; 音效为 essential, 减少动效下仍播放)
+  if (left !== lastTickSec) {
+    lastTickSec = left;
+    if (left > 0) {
+      const total = isResp ? 10 : 45;
+      fx('countdown', { el: ring, text: left + 's', intensity: Math.max(0, Math.min(1, 1 - left / total)) });
+    }
+  }
 }
 setInterval(() => {
   if (!timerKind) return;
@@ -1074,8 +1415,8 @@ setInterval(() => {
 }, 250);
 function onTurnTimeout(){
   if (!g || g.over) return;
-  const v = O.publicView(g, HUMAN);
-  if (!(v.isMyTurn && !v.me.dead) || v.pending) return;
+  const v = myView();
+  if (!v || !(v.isMyTurn && !v.me.dead) || v.pending) return;
   document.getElementById('hint-line').innerHTML = '<span class="kbd" style="color:var(--red)">⏱ 45秒超时 · 自动结束出牌</span>';
   endPlayFlow();
 }
@@ -1127,6 +1468,7 @@ function tutorNext(){
 
 /* ---------- 开局 ---------- */
 function openSetupModal(){
+  if (CLIENT_KIND === 'net') { toast('联网对局: 开局由房主在大厅控制'); return; }
   stopTimers();
   if (autoMode) { autoMode = false; document.getElementById('btn-auto').textContent = '▶ 自动托管(测试)'; }
   closeModal();
@@ -1135,32 +1477,39 @@ function openSetupModal(){
     <div style="display:flex;gap:8px;flex-wrap:wrap">
       ${[3,4,5,6].map(n => `<button class="btn${n === 4 ? ' green' : ''}" onclick="startGame(${n})">${n} 人局</button>`).join('')}
     </div>
-    <div style="font-size:12px;color:var(--faint)">主公固定0号(你)时公开显示 · 其余身份随机 · 名字取 NAMES 前 N 位</div>`);
+    <div style="font-size:12px;color:var(--faint)">你固定0号主公(公开) · 其余座位由 AI 顶替(AI-2..AI-N)</div>`);
 }
-function restart(){ openSetupModal(); }
+function restart(){
+  if (CLIENT_KIND === 'net') { toast('联网对局: 重开由房主在大厅控制'); return; }
+  openSetupModal();
+}
 
 function startGame(n){
+  if (CLIENT_KIND === 'net') { toast('联网对局: 开局由房主在大厅控制'); return; }
   closeModal();
-  g = O.createGame({ seed: Date.now() % 100000, human: HUMAN });
-  O.setup(g, NAMES.slice(0, n));
-  O.startTurn(g, 0);
+  g = null;
   selected = -1; seatTargetable.clear(); mode = 'single'; fangTargets = [];
   usedLimited.clear(); gameOverShown = false; shownPromptKey = ''; skillTargetName = '';
+  startModalShown = false;
   hideFunButtons();
   document.getElementById('btn-fang-confirm').style.display = 'none';
-  // 人类是0号,开局即人类回合
-  O.judgePhase(g, 0);
-  O.drawPhase(g, 0);
-  render();
-  openStartModal();
+  // 本地单机经 LocalClient 开局: 引擎/AI 泵/提示计时全部由门面驱动(aiFill=0 → 总人数=n)
+  C.start({ humanCount: n, aiFill: 0 }).then(r => {
+    if (!r || r.ok === false) { toast((r && r.why) || '开局失败'); return; }
+    g = C.getGame ? C.getGame() : null;
+    render();
+    tryOpenStartModal();
+  });
 }
 function openStartModal(){
-  const p = g.players[HUMAN];
+  const v = myView();
+  const p = g && g.players ? g.players[HUMAN] : null;
+  if (!v || !p) return;
   const idt = (O.IDENTITIES && O.IDENTITIES[p.identity]) || { name: p.identity, plain: '' };
   const idLine = p.identity === 'lord'
     ? '你是 <b style="color:var(--yellow)">主公(公开)</b>'
     : `你的身份: <b style="color:var(--yellow)">${esc(idt.name)}(${esc(idt.plain)})</b>`;
-  const canRedraw = O.lordCanRedraw && O.lordCanRedraw(g);
+  const canRedraw = !!(O.lordCanRedraw && v.lordCanRedraw);
   openModal('🎮 开局', `
     <div style="font-size:13px;line-height:1.7">${idLine} · 职业【<span class="name-zh">${esc(p.prof.name)}</span><span class="name-plain">${esc(p.prof.plain)}</span>】<br>${esc(p.prof.passive || '')}<br>规则速览: 用【<span class="name-zh">做法假了</span><span class="name-plain">攻击</span>】攻击任意玩家 · <span class="name-zh">WA</span><span class="name-plain">闪避</span>响应1费 · 守擂单位挡刀 · 手牌上限5</div>
     ${canRedraw ? `<button class="btn green" onclick="lordRedraw()">🔄 重洗起手牌(4张全≥3费可重洗一次)</button>` : ''}
@@ -1169,14 +1518,13 @@ function openStartModal(){
 }
 function lordRedraw(){
   if (!O.lordRedraw) { closeModal(); return; }
-  O.lordRedraw(g);
-  render();
-  openStartModal();
+  C.sendAction('lordRedraw', {}).then(() => { render(); openStartModal(); });
 }
 
 /* ---------- 成就结算 ---------- */
 function showAchievements(){
-  const v = O.publicView(g, HUMAN);
+  const v = myView();
+  if (!v) return;
   const ach = v.achievements || {};
   let rows = '';
   for (const pidStr of Object.keys(ach)) {
@@ -1184,13 +1532,192 @@ function showAchievements(){
       rows += `<div style="display:flex;align-items:center;gap:8px;font-size:12px"><span>🏅</span><span>${esc(playerName(+pidStr))} — ${esc(a.name)}</span><span style="margin-left:auto;color:var(--orange);font-weight:700">+${a.points}</span></div>`;
     }
   }
+  if (rows) fx('achievement', { text: '🏅 成就达成' }); // P7b: 成就弹出+成就音
   openModal('🏆 游戏结束', `
     <div style="font-size:14px"><b>${esc(v.winner || '?')} 获胜</b></div>
     ${rows ? `<div class="ach-pop" style="display:flex;flex-direction:column;gap:6px;padding:8px;background:var(--panel2);border-radius:8px">${rows}</div>` : '<div style="font-size:12px;color:var(--faint)">本局无成就达成</div>'}
     <button class="btn green" onclick="restart()">↺ 再来一局</button>`);
 }
 
-openSetupModal();
+/* ============ P6b: 联网镜像 / 订阅器 / 大厅 / 启动探测 ============ */
+/* 联网 state → 本地镜像 g(只含 render()/seatHtml/playerName/pdKeyOf 消费的字段,
+   与 publicView 形状一致; 非视图本地 UI 状态 selected/mode/discardSel 等保持独立) */
+function applyState(m){
+  const v = m.view;
+  if (!v || !v.me) return;
+  NET.view = v;
+  if (m.deadline) NET.deadline = {
+    turn: (typeof m.deadline.turn === 'number' ? m.deadline.turn : 45000),
+    resp: (typeof m.deadline.resp === 'number' ? m.deadline.resp : 10000),
+  };
+  if (NET.setup && NET.setup.professions) NET.myProf = NET.setup.professions[NET.setup.seatId] || null;
+  // 回合权威截止(仅在我回合首次出现该 turnKey 时重置, 与服务器 startTurnTimer 对齐)
+  const turnKey = v.turn + ':' + v.round;
+  if (v.isMyTurn && !v.me.dead) {
+    if (NET.lastTurnKey !== turnKey) { NET.lastTurnKey = turnKey; NET.turnDeadline = Date.now() + NET.deadline.turn; }
+  } else {
+    NET.lastTurnKey = turnKey;
+  }
+  const players = [];
+  players[v.me.id] = {
+    id: v.me.id, name: v.me.name, identity: v.me.identity, prof: v.me.prof,
+    hp: v.me.hp, maxHp: v.me.maxHp, mp: v.me.mp, mpMax: v.me.mpMax,
+    awaken: v.me.awaken, dead: v.me.dead, hand: v.me.hand, handLimit: v.me.handLimit,
+    weapon: v.me.weapon, weaponKey: v.me.weaponKey, armor: v.me.armor,
+    units: v.me.units, delayArea: v.me.delayArea,
+  };
+  for (const q of v.others) players[q.id] = {
+    id: q.id, name: q.name, identity: q.identity,
+    prof: { name: q.profName, plain: q.profPlain },
+    hp: q.hp, maxHp: q.maxHp, mp: q.mp, mpMax: q.mpMax,
+    awaken: q.awaken, dead: q.dead, hand: [], handLimit: 5,
+    weapon: q.weapon, armor: q.armor, units: q.units, delayArea: q.delayArea,
+  };
+  // pending 合并: 定向 prompt 信封优先; 状态视图的 pendingView 作为首发/回退(含 id=promptId)
+  const prev = promptInfo(g && g.pending);
+  const vpd = promptInfo(v.pending);
+  let pending = null;
+  if (vpd && vpd.promptId != null) {
+    if (!prev) pending = v.pending;
+    else if (prev.promptId === vpd.promptId) pending = v.pending; // 权威刷新
+    else pending = g.pending; // 并发多槽: 保留我的定向提示(它仍可能在未决中)
+  }
+  g = { players, turn: v.turn, round: v.round, deck: v.deck, discard: v.discard, over: v.over, winner: v.winner, achievements: v.achievements, evoWait: v.evoWait, pending: pending };
+  render();
+  tryOpenStartModal();
+}
+/* 联网定向提示: payload.type 为语义类型(promptId 在顶层); evo 走 renderEvoPrompt 路径 */
+function onPromptMsg(m){
+  if (CLIENT_KIND !== 'net' || !g) return; // 本地模式沿用引擎 pending 原路径
+  const payload = m.payload || {};
+  if (typeof m.timeoutMs === 'number') NET.promptDeadline = Date.now() + m.timeoutMs;
+  if (payload.type === 'evo') { renderEvoPrompt({ keys: payload.keys || [] }); return; }
+  if (payload.type === 'discard') {
+    // 防御分支(引擎暂不产生 discard 提示): 进入弃牌选择模式
+    const v = NET.view;
+    const over = v ? Math.max(0, v.me.hand.length - v.me.handLimit) : 1;
+    discardMode = true; discardSel.clear();
+    document.getElementById('btn-end').textContent = `✓ 确认弃牌(0/${over})`;
+    document.getElementById('hint-line').innerHTML = `<span class="kbd" style="color:var(--orange)">弃牌阶段: 点击选择要弃的牌, 再点「确认弃牌」</span>`;
+    g.pending = Object.assign({}, payload, { promptId: m.promptId });
+    render();
+    return;
+  }
+  g.pending = Object.assign({}, payload, { promptId: m.promptId });
+  shownPromptKey = '';
+  render();
+}
+function tryOpenStartModal(){
+  if (startModalShown) return;
+  if (CLIENT_KIND === 'net' && !NET.setup) return;
+  const v = myView();
+  if (!v || !g || !g.players[HUMAN]) return; // 等首个 state 镜像就绪
+  startModalShown = true;
+  openStartModal();
+}
+/* 门面订阅(两种客户端同一形状: state/prompt/event/setup/hello/reject/ack/...) */
+function onFacadeMsg(m){
+  if (!m || !m.type) return;
+  switch (m.type) {
+    case 'setup':
+      NET.setup = m;
+      if (CLIENT_KIND === 'net') {
+        HUMAN = m.pid; // 我的引擎 pid(座位打乱后未必是 0)
+        hideLobby();
+        tryOpenStartModal();
+      }
+      break;
+    case 'state':
+      if (CLIENT_KIND === 'net') applyState(m);
+      else if (g) render();
+      break;
+    case 'prompt': onPromptMsg(m); break;
+    case 'ack':
+      // 联网: 我的提示被服务器确认解决 → 清镜像 pending(本地模式不动引擎 g)
+      if (CLIENT_KIND === 'net' && m.ref != null) {
+        const pi = promptInfo(g && g.pending);
+        if (pi && pi.promptId === m.ref) { g.pending = null; render(); }
+      }
+      break;
+    case 'reject':
+      if (CLIENT_KIND === 'net') toast('被拒绝: ' + (m.why || '未知原因')); // 本地: 非法动作仍由调用点弹窗提示
+      fx('reject', { el: document.getElementById('toast') || null, sfx: 'error' }); // P7b: 抖动+错误音(本地/联网同源)
+      break;
+    case 'event':
+      if (m.kind === 'gameover') {
+        if (!gameOverShown) { gameOverShown = true; stopTimers(); showAchievements(); }
+        render();
+      } else if (m.kind === 'shutdown') {
+        toast('服务器已关闭: ' + ((m.payload && m.payload.reason) || '无原因'));
+        stopTimers();
+        const be = document.getElementById('btn-end'); if (be) be.disabled = true;
+        const ba = document.getElementById('btn-auto'); if (ba) ba.disabled = true;
+      }
+      // P7b: fx/sfx/log/chat/judge/... 事件 → 动效/音效(AI 与真人同一条反馈管线)
+      netEventFx(m);
+      break;
+    default: break;
+  }
+}
+/* 局域网大厅(覆盖层; 进游戏即隐藏) */
+function mountNetLobby(){
+  if (!(O.ui && O.ui.lobby)) { toast('大厅模块缺失'); return; }
+  if (!document.getElementById('page-lobby')) {
+    const el = document.createElement('div');
+    el.id = 'page-lobby';
+    document.body.appendChild(el);
+  }
+  const el = document.getElementById('page-lobby');
+  el.style.display = '';
+  NET.lobbyEl = O.ui.lobby.mountLobby(el, C, {
+    url: (typeof location !== 'undefined') ? location.href : '',
+    name: NAMES[0],
+    onGameStart: () => { hideLobby(); },
+  });
+}
+function hideLobby(){
+  if (NET.lobbyEl) { try { NET.lobbyEl.destroy(); } catch (e) { /* 忽略 */ } NET.lobbyEl = null; }
+  const el = document.getElementById('page-lobby');
+  if (el) el.style.display = 'none';
+}
+/* ---------- 启动: 模式探测 + 门面装配 ---------- */
+(function boot(){
+  const isFile = (typeof location !== 'undefined') && location.protocol === 'file:';
+  function bootLocal(){
+    CLIENT_KIND = 'local';
+    C = O.ui.adapter.createLocalClient(O, { thinkMs: 0, pid: 0, name: NAMES[0] });
+    C.subscribe(onFacadeMsg);
+    openSetupModal();
+  }
+  function bootNet(){
+    CLIENT_KIND = 'net';
+    C = O.ui.adapter.createNetClient({});
+    C.subscribe(onFacadeMsg);
+    // 先挂大厅再自动 join(默认名): 大厅订阅先于 hello, 入座状态/座位列表由 lobby.js 自行维护;
+    // join 的 hello 信封携带 mode(lan/single) —— /api/hello 探活接口本身不含 mode
+    mountNetLobby();
+    C.join({ name: NAMES[0] }).then(hello => {
+      NET.hello = hello;
+      if (hello && hello.mode === 'single') { hideLobby(); hint('已连接服务器(单人模式) · 等待自动开局…'); }
+      // lan: 大厅保留(已自动入座, 房主可配置/开局)
+    }).catch(e => {
+      const st = C.getStatus ? C.getStatus() : null;
+      if (st && st.joined) return; // 已被新 join(如用户点大厅加入)成功入座: 忽略旧 promise 的覆盖错误
+      hideLobby();
+      toast('加入服务器失败: ' + ((e && e.message) || e) + ' · 已回落本地模式');
+      if (C && C.stop) { try { C.stop(); } catch (err) { /* 忽略 */ } }
+      bootLocal();
+    });
+  }
+  if (isFile) { bootLocal(); return; }
+  // http(s): 探活 /api/hello(≈3s 超时); 命中即联网, 失败回落本地(file:// 等价行为)
+  const ctrl = (typeof AbortController !== 'undefined') ? new AbortController() : null;
+  if (ctrl) setTimeout(() => { try { ctrl.abort(); } catch (e) { /* 忽略 */ } }, 3000);
+  fetch('/api/hello', Object.assign({ method: 'GET', headers: { 'Cache-Control': 'no-cache' } }, ctrl ? { signal: ctrl.signal } : null))
+    .then(r => (r && r.ok) ? r.json().catch(() => null) : null)
+    .then(j => { if (j && j.ok) bootNet(); else bootLocal(); })
+    .catch(() => bootLocal());
+})();
 </script>
 </body>
 </html>

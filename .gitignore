@@ -1,6 +1,10 @@
 # Build artifacts
 
 
+# Node / v4-web build artifacts (P5)
+node_modules/
+dist/
+
 *.o
 *.exe
 *.obj

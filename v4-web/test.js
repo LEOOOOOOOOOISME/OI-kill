@@ -138,11 +138,11 @@ function runAI(seed) {
       if (t !== baseline) rec.add('card-drift', baseline, t, `round=${g.round} turn=${pid} deck=${g.deck.length} disc=${g.discard.length}`);
       // 断言4: 数值边界
       checkBounds(g, rec, 'pre');
-      // 断言3: 回合开始时手牌上限 (回合间摸牌合法: 挣扎+2/觉醒+1/玄学优化+2等, 容忍+5)
+      // 断言3: 回合开始时手牌上限 (回合间合法摸牌, 见 fixlog-3a.md: 挣扎+2[需求L523] / 退役觉醒「回2血摸2」+2[需求L523+L581-583,溢出不可能] / 玄学优化+2[需求L354] → 容忍+6)
       const cur = g.players[pid];
       if (cur && !cur.dead) {
         const lim = handLimitOf(cur);
-        if (cur.hand.length > lim + 5) rec.add('hand-limit', `<=${lim}+5`, cur.hand.length, `pid=${pid} round=${g.round} prof=${cur.prof.id} skipPlay=${cur.skipPlay} 回合开始`);
+        if (cur.hand.length > lim + 6) rec.add('hand-limit', `<=${lim}+6`, cur.hand.length, `pid=${pid} round=${g.round} prof=${cur.prof.id} skipPlay=${cur.skipPlay} 回合开始`);
       }
       // 视图健全性(额外)
       checkView(g, rec, pid);
@@ -157,10 +157,10 @@ function runAI(seed) {
         // 断言6: 连续两次 endTurn 之间 turn 必须变化
         if (g.turn === prevTurn) rec.add('turn-stuck', `turn!=${prevTurn}`, g.turn, `round=${g.round} 玩家${prevTurn}结束后`);
         checkBounds(g, rec, 'post');
-        // 弃牌阶段后手牌应≤上限(容忍回合结束技能+2: 集训+1等)
+        // 弃牌阶段后手牌应≤上限(回合结束合法补牌, 见 fixlog-3a.md: 划水怪觉醒「终极摸鱼」+2[需求L522] / 集训+1[需求L524] + 进化取回手牌+1[需求L560] → 容忍+3)
         const ended = g.players[pid];
-        if (ended && !ended.dead && ended.hand.length > handLimitOf(ended) + 2)
-          rec.add('hand-limit-post', `<=${handLimitOf(ended)}+2`, ended.hand.length, `pid=${pid} round=${g.round} 弃牌后`);
+        if (ended && !ended.dead && ended.hand.length > handLimitOf(ended) + 3)
+          rec.add('hand-limit-post', `<=${handLimitOf(ended)}+3`, ended.hand.length, `pid=${pid} round=${g.round} 弃牌后`);
       }
     }
     turns = steps; over = g.over; winner = g.winner; round = g.round;
@@ -249,7 +249,7 @@ function humanTurn(g, rec) {
     if (aIdx >= 0 && me.canAttack) {
       const enemies = g.players.filter(q => !q.dead && q.id !== 0);
       if (enemies.length) {
-        const t = enemies[Math.floor(Math.random() * enemies.length)];
+        const t = enemies[Math.floor(g.rnd() * enemies.length)];
         const r = API.playCard(g, 0, aIdx, t.id);
         shapeCheck(rec, r, 'playCard(attack)');
         if (r.ok) {
@@ -281,7 +281,7 @@ function humanTurn(g, rec) {
       if (needsT.includes(k)) {
         const enemies = g.players.filter(q => !q.dead && q.id !== 0);
         if (!enemies.length) break;
-        tgt = enemies[Math.floor(Math.random() * enemies.length)].id;
+        tgt = enemies[Math.floor(g.rnd() * enemies.length)].id;
       }
       const r = API.playCard(g, 0, trIdx, tgt);
       shapeCheck(rec, r, 'playCard(trick ' + k + ')');

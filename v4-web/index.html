@@ -126,6 +126,14 @@ body.dark .turn-halo{box-shadow:0 0 0 3px rgba(78,201,176,.2)}
 .tip{position:fixed;z-index:290;width:236px;background:var(--panel);border:1px solid var(--line2);border-radius:8px;padding:12px;font-size:12px;display:none;pointer-events:none;box-shadow:0 10px 30px rgba(31,35,40,.25)}
 .tip .t-name{font-weight:700;color:var(--green);margin-bottom:6px}
 .tip .t-body{color:var(--dim);line-height:1.6}
+/* L: 45s/10s 环形倒计时(conic-gradient), <=10s 变红脉动 */
+.timer-ring{width:24px;height:24px;border-radius:50%;flex:none;position:relative;background:conic-gradient(var(--ring-color,var(--orange)) calc(var(--ring-frac,0)*1%),var(--panel3) 0);transition:background .2s;margin-left:2px}
+.timer-ring::after{content:'';position:absolute;inset:3px;border-radius:50%;background:var(--panel)}
+.timer-ring .tt{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;font-size:8.5px;font-family:var(--mono);color:var(--dim);z-index:1}
+.timer-ring.low{animation:ringPulse .8s ease-in-out infinite}
+@keyframes ringPulse{0%,100%{transform:scale(1)}50%{transform:scale(1.15)}}
+/* L: 轻量 toast(弃牌失败等提示) */
+.toast{position:fixed;top:64px;left:50%;transform:translateX(-50%);z-index:400;background:var(--panel);border:1px solid var(--red);color:var(--red);padding:10px 18px;border-radius:8px;box-shadow:var(--shadow);font-size:13px;font-weight:600;display:none;max-width:80vw;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 </style>
 </head>
 <body>
@@ -153,7 +161,7 @@ body.dark .turn-halo{box-shadow:0 0 0 3px rgba(78,201,176,.2)}
             <div class="hand" id="hand"></div>
           </div>
           <div class="actions">
-            <div class="row"><span class="kbd" id="phase-info">—</span><span class="kbd" id="timer-info" style="color:var(--orange);white-space:nowrap"></span></div>
+            <div class="row"><span class="kbd" id="phase-info">—</span><span class="timer-ring" id="timer-ring" style="display:none"><span class="tt"></span></span><span class="kbd" id="timer-info" style="color:var(--orange);white-space:nowrap"></span></div>
             <div class="row" id="skill-row" style="display:none"></div>
             <div class="row" style="flex-direction:column;gap:8px;align-items:stretch">
               <button class="btn green" id="btn-end">✓ 结束出牌</button>
@@ -185,6 +193,15 @@ body.dark .turn-halo{box-shadow:0 0 0 3px rgba(78,201,176,.2)}
   </div>
 </div>
 <div class="tip" id="tip"></div>
+<div class="toast" id="toast"></div>
+<script src="src/data/cards.js"></script>
+<script src="src/data/professions.js"></script>
+<script src="src/data/identities.js"></script>
+<script src="src/engine/core.js"></script>
+<script src="src/engine/battle.js"></script>
+<script src="src/engine/tricks.js"></script>
+<script src="src/engine/skills.js"></script>
+<script src="src/engine/index.js"></script>
 <script src="game.js"></script>
 <script>
 const O = window.OIKill;
@@ -234,6 +251,7 @@ document.getElementById('sw-mode').addEventListener('click', e => {
   const s = e.target.closest('span'); if (!s) return;
   document.querySelectorAll('#sw-mode span').forEach(x => x.classList.toggle('on', x === s));
   document.body.classList.toggle('plain-mode', s.dataset.v === 'plain');
+  if (g) render(); // L: 命名切换同步作用于日志
 });
 
 /* ---------- 工具 ---------- */
@@ -246,7 +264,7 @@ function logToHtml(v){
   const el = document.getElementById('logbody');
   el.innerHTML = v.log.map(l => {
     // H10: 内奸阵亡绝不显示身份(引擎日志行脱敏)
-    const txt = String(l.txt).replace(/身份: [^(]+\(内奸死亡不公开[^)]*\)/, '身份: 不公开');
+    const txt = mapLogNames(String(l.txt).replace(/身份: [^(]+\(内奸死亡不公开[^)]*\)/, '身份: 不公开'));
     return `<div class="log-item ${l.cls||''}"><span class="t">R${l.t}</span>${txt}</div>`;
   }).join('');
   el.scrollTop = el.scrollHeight;
@@ -260,6 +278,34 @@ function closeModal(){ document.getElementById('modal').classList.remove('show')
 function hint(html){
   const el = document.getElementById('hint-line');
   if (el) el.innerHTML = '<span class="kbd" style="color:var(--blue)">' + html + '</span>';
+}
+let toastTimer = null;
+function toast(msg){
+  const el = document.getElementById('toast');
+  if (!el) { openModal('提示', `<div style="color:var(--red)">${esc(msg)}</div><button class="btn sm" onclick="closeModal()">知道了</button>`); return; }
+  el.textContent = msg;
+  el.style.display = 'block';
+  clearTimeout(toastTimer);
+  toastTimer = setTimeout(() => { el.style.display = 'none'; }, 2600);
+}
+/* L: 日志命名映射(黑话→通俗), 与卡面双名保持一致 */
+let _cardNamePairsCache = null;
+function cardNamePairs(){
+  if (_cardNamePairsCache) return _cardNamePairsCache;
+  const pairs = [];
+  for (const key of Object.keys(O.CARDS)) {
+    const spec = O.CARDS[key];
+    if (spec && spec.name && spec.plain && spec.name !== spec.plain) pairs.push([spec.name, spec.plain]);
+  }
+  pairs.sort((a, b) => b[0].length - a[0].length); // 长名先替换,避免子串截断
+  _cardNamePairsCache = pairs;
+  return pairs;
+}
+function mapLogNames(txt){
+  if (!document.body.classList.contains('plain-mode')) return txt;
+  let out = txt;
+  for (const [name, plain] of cardNamePairs()) out = out.split(name).join(plain);
+  return out;
 }
 
 /* ---------- 渲染 ---------- */
@@ -437,7 +483,8 @@ function tryPlaySelected(i, v, me, c){
     return;
   }
   // 神犇·碾压(被动): 黑色非攻击牌当作做法假了,进入目标模式(引擎按碾压处理)
-  if (me.prof && me.prof.id === 'shenben' && !isRedSuit(c.suit) && !O.isAttackKey(c.key)) {
+  // 与引擎 playCard 碾压分支对齐: 响应牌(WA/特判/反制)不可当攻击,否则选定目标后会被引擎拒绝
+  if (me.prof && me.prof.id === 'shenben' && !isRedSuit(c.suit) && !O.isAttackKey(c.key) && !O.isDodgeKey(c.key) && c.key !== 'counter' && c.key !== 'counterEvo') {
     for (const q of g.players) if (q.id !== HUMAN && !q.dead) seatTargetable.add(q.id);
     render();
     hint(`【神犇·碾压】黑色牌当作<span class="name-zh">做法假了</span><span class="name-plain">攻击</span>打出 · 点击一个目标 · ESC取消`);
@@ -572,7 +619,8 @@ function endPlayFlow(){
   }
   if (discardMode) {
     if (discardSel.size !== over) return; // 数量不符
-    if (O.discardCards) O.discardCards(g, HUMAN, [...discardSel]);
+    const r = O.discardCards ? O.discardCards(g, HUMAN, [...discardSel]) : { ok: false, why: '引擎不支持自选弃牌' };
+    if (r && r.ok === false) { toast(r.why || '弃牌失败,请重新选择'); return; } // L: 失败保留选择并提示,不清除
     discardMode = false; discardSel.clear();
     document.getElementById('btn-end').textContent = '✓ 结束出牌';
   }
@@ -639,17 +687,21 @@ function renderPendingPrompt(v){
   else if (pd.type === 'cold' || pd.type === 'bbst' || pd.type === 'chase' || pd.type === 'guard') renderWeaponPrompt(v, count, pd.type);
   else if (pd.type === 'aoeResp') renderAoePrompt(v, count);
   else if (pd.type === 'report') renderReportPrompt(v, count);
+  else if (pd.type === 'harvest') renderHarvestPrompt(v, count);
 }
 
 function renderAoePrompt(v, count){
   const pd = v.pending;
   const spec = O.CARDS[pd.trickKey];
   const isAtk = pd.trickKey === 'aoeAtk' || pd.trickKey === 'aoeAtkEvo';
+  // M1: 引擎并行修复后 pending 透出 srcId/dmg; 防御式取用
+  const src = pd.srcId !== undefined ? pd.srcId : '?';
+  const dmg = pd.dmg !== undefined ? pd.dmg : '?';
   openModal('⛓ AOE 波及到你!', count + `
-    <div style="font-size:13px">${esc(playerName(pd.srcId))} 使用【<span class="name-zh">${esc(spec ? spec.name : pd.trickKey)}</span><span class="name-plain">${esc(spec ? spec.plain : pd.trickKey)}</span>】,波及到你(伤害${pd.dmg})。</div>
+    <div style="font-size:13px">${esc(playerName(src))} 使用【<span class="name-zh">${esc(spec ? spec.name : pd.trickKey)}</span><span class="name-plain">${esc(spec ? spec.plain : pd.trickKey)}</span>】,波及到你(伤害${dmg})。</div>
     <div style="display:flex;gap:10px;flex-wrap:wrap">
       <button class="btn green" onclick="aoeResp(true)">${isAtk ? '⚔ 打出攻击牌响应' : '🛡 出WA响应(1灵感)'}</button>
-      <button class="btn danger" onclick="aoeResp(false)">不出,受${pd.dmg}伤</button>
+      <button class="btn danger" onclick="aoeResp(false)">不出,受${dmg}伤</button>
     </div>`);
 }
 function aoeResp(yes){
@@ -672,6 +724,46 @@ function reportPick(cardKey){
   afterAction();
 }
 
+/* ---------- 题解大会(H 死锁修复): 选牌弹窗 / 默认响应 ---------- */
+function harvestChoices(pd){
+  if (pd && pd.ctx && pd.ctx.cards) return pd.ctx.cards;
+  if (pd && pd.choices) return pd.choices;
+  return [];
+}
+function harvestRespond(pd, choiceKey){
+  if (!O.respondHarvest) return;
+  // 契约: O.respondHarvest({choiceKey}); 兼容旧签名 (g, pid, choiceKey)
+  if (O.respondHarvest.length >= 3) O.respondHarvest(g, pd && pd.victim != null ? pd.victim : HUMAN, choiceKey);
+  else O.respondHarvest({ choiceKey: choiceKey });
+}
+function harvestFirstKey(pd){
+  const cs = harvestChoices(pd);
+  const c0 = cs[0];
+  if (c0 === undefined || c0 === null) return null;
+  return c0.key !== undefined ? c0.key : c0;
+}
+function renderHarvestPrompt(v, count){
+  const pd = v.pending;
+  const cs = harvestChoices(pd);
+  const hcount = `<div style="font-size:12px;color:var(--dim)"><span id="resp-count">⏱ 10s</span> · 超时自动选第1张</div>`;
+  const btns = cs.map(c => {
+    const key = c && c.key !== undefined ? c.key : c;
+    const spec = O.CARDS[key] || {};
+    const name = spec.name || (c && c.name) || key;
+    const plain = spec.plain || (c && c.plain) || name;
+    return `<button class="btn green" onclick="harvestPick('${esc(key)}')">🃏 <span class="name-zh">${esc(name)}</span><span class="name-plain">${esc(plain)}</span></button>`;
+  }).join('');
+  openModal('📚 题解大会 · 轮到你选牌', hcount + `
+    <div style="font-size:13px;color:var(--dim)">【题解大会】翻开的手牌按行动顺序各选1张,请选择你要的牌(可跳过):</div>
+    <div style="display:flex;gap:8px;flex-wrap:wrap">${btns || '<span style="color:var(--faint)">已无剩余牌可选</span>'}</div>
+    <div style="display:flex;gap:10px"><button class="btn sm" onclick="harvestPick(null)">⏭ 跳过(不选)</button></div>`);
+}
+function harvestPick(choiceKey){
+  harvestRespond(g && g.pending, choiceKey);
+  closeModal();
+  afterAction();
+}
+
 function renderDodgePrompt(v, count){
   const pd = v.pending;
   let extra = '';
@@ -685,7 +777,7 @@ function renderDodgePrompt(v, count){
       opts.map(o => `<button class="btn danger sm" onclick="betrayResp(${o.id})">🙅 ${esc(o.name)}</button>`).join('') + '</div>';
   }
   openModal('⚠️ 你被指定为攻击目标!', count + `
-    <div style="font-size:13px">${esc(playerName(pd.attacker))} 用【<span class="name-zh">做法假了</span><span class="name-plain">攻击</span>】攻击你(伤害${pd.dmg != null ? pd.dmg : 1})。</div>
+    <div style="font-size:13px">${esc(playerName(pd.attacker))} 用【<span class="name-zh">做法假了</span><span class="name-plain">攻击</span>】攻击你(伤害${pd.dmg !== undefined ? pd.dmg : 1})。</div>
     <div style="display:flex;gap:10px;flex-wrap:wrap">
       <button class="btn green" onclick="dodgeResp(true)">🛡 出 <span class="name-zh">WA</span><span class="name-plain">闪避</span>(1灵感)</button>
       <button class="btn danger" onclick="dodgeResp(false)">不出,受伤害</button>
@@ -713,7 +805,8 @@ function betrayResp(targetId){
 
 function renderCounterPrompt(v, count){
   const pd = v.pending;
-  const src = pd.srcId != null ? pd.srcId : pd.attacker;
+  // M1: 引擎并行修复后 pending 透出 srcId; 防御式回退到 attacker/'?'
+  const src = pd.srcId !== undefined ? pd.srcId : (pd.attacker != null ? pd.attacker : '?');
   const spec = O.CARDS[pd.trickKey];
   openModal('🛡 锦囊指向你!', count + `
     <div style="font-size:13px">${esc(playerName(src))} 对你使用【<span class="name-zh">${esc(spec ? spec.name : pd.trickKey)}</span><span class="name-plain">${esc(spec ? spec.plain : pd.trickKey)}</span>】。要用【特判 / 反制】抵消吗(1灵感)?</div>
@@ -761,6 +854,8 @@ function respondNo(){
   else if (pd.type === 'chase') O.respondChase(g, HUMAN, false);
   else if (pd.type === 'guard') O.respondGuard(g, HUMAN, false);
   else if (pd.type === 'aoeResp') O.respondAoeResp(g, HUMAN, false);
+  else if (pd.type === 'report') { if (O.respondReport) O.respondReport(g, HUMAN, null); } // M2: 超时默认放弃举报(不弃牌)
+  else if (pd.type === 'harvest') harvestRespond(pd, harvestFirstKey(pd));                   // H: 超时默认选第1张
   else return;
   closeModal();
   afterAction();
@@ -827,6 +922,7 @@ function aiRespondPending(){
   else if (pd.type === 'guard') O.respondGuard(g, pd.target, true);
   else if (pd.type === 'aoeResp') O.respondAoeResp(g, pd.victim, true);
   else if (pd.type === 'report') { const cs = (pd.ctx && pd.ctx.cards) || []; if (O.respondReport && cs.length) O.respondReport(g, pd.victim, cs[0].key); }
+  else if (pd.type === 'harvest') harvestRespond(pd, harvestFirstKey(pd));
 }
 
 function autoLoop(){
@@ -843,6 +939,7 @@ function autoLoop(){
     else if (pd.type === 'guard') O.respondGuard(g, HUMAN, true);
     else if (pd.type === 'aoeResp') O.respondAoeResp(g, HUMAN, true);
     else if (pd.type === 'report') { const cs = (pd.ctx && pd.ctx.cards) || []; if (O.respondReport && cs.length) O.respondReport(g, HUMAN, cs[0].key); }
+    else if (pd.type === 'harvest') harvestRespond(pd, harvestFirstKey(pd));
   }
   const ew = v.evoWait || g.evoWait;
   if (ew && ew.keys && ew.keys.length) {
@@ -871,12 +968,25 @@ function syncTimers(){
 }
 function updateTimerDisplay(){
   const el = document.getElementById('timer-info');
-  if (!el) return;
-  if (!timerKind) { el.textContent = ''; return; }
+  const ring = document.getElementById('timer-ring');
+  if (!timerKind) { if (el) el.textContent = ''; if (ring) ring.style.display = 'none'; return; }
   const left = Math.max(0, Math.ceil((timerDeadline - Date.now()) / 1000));
   const isResp = timerKind.indexOf('resp:') === 0;
-  el.textContent = (isResp ? '⏱ 响应 ' : '⏱ ') + left + 's';
-  el.style.color = left <= 10 ? 'var(--red)' : 'var(--orange)';
+  if (el) {
+    el.textContent = (isResp ? '⏱ 响应 ' : '⏱ ') + left + 's';
+    el.style.color = left <= 10 ? 'var(--red)' : 'var(--orange)';
+  }
+  // L: 环形倒计时(conic-gradient), <=10s 变红并脉动
+  if (ring) {
+    ring.style.display = '';
+    const total = isResp ? 10 : 45;
+    const frac = Math.max(0, Math.min(100, (timerDeadline - Date.now()) / (total * 1000) * 100));
+    ring.style.setProperty('--ring-frac', frac.toFixed(1));
+    ring.style.setProperty('--ring-color', left <= 10 ? 'var(--red)' : 'var(--orange)');
+    ring.classList.toggle('low', left <= 10);
+    const tt = ring.querySelector('.tt');
+    if (tt) tt.textContent = left + 's';
+  }
   const rc = document.getElementById('resp-count');
   if (rc) { rc.textContent = '⏱ ' + left + 's'; rc.style.color = left <= 3 ? 'var(--red)' : 'var(--dim)'; }
 }
@@ -885,6 +995,7 @@ setInterval(() => {
   if (Date.now() >= timerDeadline) {
     const kind = timerKind;
     stopTimers();
+    updateTimerDisplay(); // 立即清空倒计时文本与圆环
     if (kind.indexOf('resp:') === 0) onRespTimeout();
     else onTurnTimeout();
   } else {
@@ -907,17 +1018,19 @@ function onRespTimeout(){
 function showGallery(){
   const groups = [['basic','基本牌'],['trick','锦囊牌'],['equip','装备牌'],['unit','单位'],['evo','进化牌']];
   let html = '';
+  let totalKinds = 0; // L: 按实际展示的牌型数统计标题
   for (const [t, label] of groups) {
     const cards = Object.entries(O.CARDS).filter(([,s]) => {
       const isEvo = s.desc && s.desc.indexOf('(进化)') >= 0;
       if (t === 'evo') return isEvo;
       return s.type === t && !isEvo && s.key !== 'aShield';
     });
+    totalKinds += cards.length;
     html += `<div style="font-size:12px;color:var(--dim);margin:10px 0 4px">◆ ${label}(${cards.length})</div>` +
       `<div style="display:grid;grid-template-columns:1fr 1fr;gap:6px;max-height:200px;overflow:auto">` +
       cards.map(([,s]) => `<div style="border:1px solid var(--line2);border-radius:6px;padding:6px 8px;font-size:12px"><b class="name-zh">${esc(s.name)}</b><b class="name-plain">${esc(s.plain)}</b> <span style="color:var(--orange);font-family:var(--mono)">💡${s.cost}</span><div style="color:var(--faint);font-size:11px;line-height:1.4">${esc(s.desc || '')}</div></div>`).join('') + '</div>';
   }
-  openModal('🃏 卡牌图鉴 · 120张(含进化牌)', html + '<button class="btn sm" style="margin-top:8px" onclick="closeModal()">关闭</button>');
+  openModal(`🃏 卡牌图鉴 · 牌库120张 · ${totalKinds}种牌型(含进化牌)`, html + '<button class="btn sm" style="margin-top:8px" onclick="closeModal()">关闭</button>');
 }
 document.getElementById('btn-gallery').addEventListener('click', showGallery);
 

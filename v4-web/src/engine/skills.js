@@ -44,7 +44,7 @@
   function unitAttack(g, pid, unitIdx, victimPid) {
     const p = g.players[pid];
     if (g.turn !== pid || p.dead || p.skipPlay) return { ok: false, why: '非行动阶段' };
-    if (g.pending) return { ok: false, why: '等待响应中' };
+    if (nsEngine.core.hasBlockingPrompt(g)) return { ok: false, why: '等待响应中' };
     const u = p.units[unitIdx];
     if (!u || !u.ready) return { ok: false, why: '该单位尚未就绪(速攻除外)' };
     const v = g.players[victimPid];
@@ -60,7 +60,7 @@
   function skillUse(g, pid, name, targetId, targetId2) {
     const p = g.players[pid];
     if (g.turn !== pid || p.dead || p.skipPlay) return { ok: false, why: '非行动阶段' };
-    if (g.pending) return { ok: false, why: '等待响应中' };
+    if (nsEngine.core.hasBlockingPrompt(g)) return { ok: false, why: '等待响应中' };
     if (p.usedSkillsThisTurn[name]) return { ok: false, why: '本回合已使用过该技能' };
     const t = targetId !== undefined ? g.players[targetId] : null;
     const needT = ['live', 'seal', 'teach', 'kouhai', 'baoling'];

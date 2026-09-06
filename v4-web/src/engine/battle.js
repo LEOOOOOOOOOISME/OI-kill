@@ -5,6 +5,7 @@
  * 挂载: 共享命名空间 OIKill.engine.battle
  * 导出(54 键中的 6 键): respondDodge, respondBetray, respondCold, respondBbst,
  *   respondChase, respondGuard
+ * P2: 各 respondX 追加可选末位参数 promptId(不传则解析该 pid 的首个未决提示)。
  * 另向共享命名空间暴露内部工具(供 core/tricks 调用, 不进聚合导出):
  *   canDodge, resolveDodge, afterDodge, resolveHit, nearDeath, kill, giveAttack,
  *   helperDodge, resumeMultiAttack, aiBetrayConsent
@@ -144,8 +145,8 @@
     if (attacker.weapon && attacker.weapon.key === 'wSeg') { nsEngine.core.draw(g, attacker.id, 1); g.log.push({ t: g.round, txt: `${attacker.name}【线段树】摸1`, cls: '' }); }
     // 不死心: 被抵消后立即再出一张攻击(需求9.3)
     if (attacker.weapon && attacker.weapon.key === 'wChase' && !attacker.chaseUsed && attacker.hand.some(c => nsData.cards.isAttackKey(c.key)) && !target.dead) {
-      if (attacker.id === g.human) {
-        g.pending = { type: 'chase', attacker: attacker.id, target: target.id };
+      if (g.isHuman(attacker.id)) {
+        nsEngine.core.setPrompt(g, { type: 'chase', pid: attacker.id, attacker: attacker.id, target: target.id });
         return 'pending';
       }
       const ai = attacker.hand.findIndex(c => nsData.cards.isAttackKey(c.key));
@@ -153,14 +154,13 @@
       g.discard.push(ac);
       attacker.chaseUsed = true;
       g.log.push({ t: g.round, txt: `${attacker.name}【不死心】再出一张${nsEngine.core.spec(ac.key).name}!`, cls: 'act' });
-      g.askDodge = (target.id === g.human);
       nsEngine.core.attackPlayer(g, attacker, target, { suit: ac.suit, isEvo: ac.key === 'attackEvo' });
       return 'chased';
     }
     // 平衡树: 被抵消时弃1张强制命中(需求9.3; M-15: 沿用原攻击最终伤害,不固定为1)
     if (attacker.weapon && attacker.weapon.key === 'wBbst' && attacker.hand.length >= 1 && !target.dead) {
-      if (attacker.id === g.human) {
-        g.pending = { type: 'bbst', attacker: attacker.id, target: target.id, dmg: dmg };
+      if (g.isHuman(attacker.id)) {
+        nsEngine.core.setPrompt(g, { type: 'bbst', pid: attacker.id, attacker: attacker.id, target: target.id, dmg: dmg });
         return 'pending';
       }
       nsEngine.core.discardFromHand(g, attacker, 0);
@@ -170,18 +170,16 @@
     return 'dodged';
   }
 
-  function respondCold(g, pid, yes) {
-    const pd = g.pending;
-    if (!pd || pd.type !== 'cold') return { ok: false, why: '无挂起的冷数据询问' };
-    g.pending = null;
+  function respondCold(g, pid, yes, promptId) {
+    const pd = nsEngine.core.takePrompt(g, ['cold'], pid, promptId);
+    if (!pd) return { ok: false, why: '无挂起的冷数据询问' };
     const atk = g.players[pd.attacker], tgt = g.players[pd.target];
     const r = resolveHit(g, atk, tgt, pd.dmg, pd.opts || {}, !!yes);
     return { ok: true, result: r };
   }
-  function respondBbst(g, pid, yes) {
-    const pd = g.pending;
-    if (!pd || pd.type !== 'bbst') return { ok: false, why: '无挂起的平衡树询问' };
-    g.pending = null;
+  function respondBbst(g, pid, yes, promptId) {
+    const pd = nsEngine.core.takePrompt(g, ['bbst'], pid, promptId);
+    if (!pd) return { ok: false, why: '无挂起的平衡树询问' };
     const atk = g.players[pd.attacker], tgt = g.players[pd.target];
     if (yes) {
       if (atk.hand.length < 1) return { ok: false, why: '手牌不足' };
@@ -191,10 +189,9 @@
     }
     return { ok: true, result: 'dodged' };
   }
-  function respondChase(g, pid, yes) {
-    const pd = g.pending;
-    if (!pd || pd.type !== 'chase') return { ok: false, why: '无挂起的不死心询问' };
-    g.pending = null;
+  function respondChase(g, pid, yes, promptId) {
+    const pd = nsEngine.core.takePrompt(g, ['chase'], pid, promptId);
+    if (!pd) return { ok: false, why: '无挂起的不死心询问' };
     const atk = g.players[pd.attacker], tgt = g.players[pd.target];
     if (yes) {
       const ai = atk.hand.findIndex(c => nsData.cards.isAttackKey(c.key));
@@ -203,7 +200,6 @@
       g.discard.push(ac);
       atk.chaseUsed = true;
       g.log.push({ t: g.round, txt: `${atk.name}【不死心】再出一张${nsEngine.core.spec(ac.key).name}!`, cls: 'act' });
-      g.askDodge = (tgt.id === g.human);
       return { ok: true, result: nsEngine.core.attackPlayer(g, atk, tgt, { suit: ac.suit, isEvo: ac.key === 'attackEvo' }) };
     }
     return { ok: true, result: 'declined' };
@@ -213,8 +209,8 @@
     // 冷数据: 可选择改为弃置目标2张牌
     if (cold === undefined) {
       if (attacker.weapon && attacker.weapon.key === 'wCold' && target.hand.length >= 2) {
-        if (attacker.id === g.human) {
-          g.pending = { type: 'cold', attacker: attacker.id, target: target.id, dmg, opts: JSON.parse(JSON.stringify(opts)) };
+        if (g.isHuman(attacker.id)) {
+          nsEngine.core.setPrompt(g, { type: 'cold', pid: attacker.id, attacker: attacker.id, target: target.id, dmg, opts: JSON.parse(JSON.stringify(opts)) });
           return 'pending';
         }
         return resolveHit(g, attacker, target, dmg, opts, true); // AI 自动改为弃牌
@@ -248,17 +244,16 @@
     return 'hit';
   }
 
-  function respondDodge(g, pid, yes, helperId) {
-    if (!g.pending || g.pending.type !== 'dodge') return { ok: false, why: '无挂起的WA询问' };
-    const pd = g.pending;
+  function respondDodge(g, pid, yes, helperId, promptId) {
+    const pd = nsEngine.core.takePrompt(g, ['dodge'], pid, promptId);
+    if (!pd) return { ok: false, why: '无挂起的WA询问' };
     const isBetray = pd.ctx && pd.ctx.betrayConsent;
-    // 护驾代出WA: 先校验帮手合法性(校验不消耗询问, pending 保留供UI重新作答)
+    // 护驾代出WA: 先校验帮手合法性(校验不消耗询问; 取走提示后 UI 不可重问, 与既有行为一致)
     let h = null;
     if (!isBetray && helperId !== undefined && helperId !== null) {
       h = g.players[helperId];
       if (!h || h.dead || !canDodge(g, h)) return { ok: false, why: '该玩家无法代出WA' };
     }
-    g.pending = null;
     // 卖队友转嫁同意(req 18.3): 被转嫁目标作答 yes=同意转嫁 / no=拒绝(攻击落回原目标)
     if (isBetray) {
       const atk = g.players[pd.attacker];
@@ -269,12 +264,10 @@
         if (bi >= 0 && !g.usedBetray) { const bc = v.hand.splice(bi, 1)[0]; g.discard.push(bc); g.usedBetray = true; }
         if (!nt || nt.dead) return { ok: true, result: 'target-dead' };
         g.log.push({ t: g.round, txt: `${nt.name} 同意被转嫁攻击!`, cls: 'act' });
-        g.askDodge = (nt.id === g.human);
         const r = nsEngine.core.attackPlayer(g, atk, nt, { suit: pd.suit, isEvo: pd.isEvo, allowBetray: false, noDodge: false, cardId: pd.cardId });
         return { ok: true, result: r === 'pending' ? r : 'redirected' };
       }
       g.log.push({ t: g.round, txt: `${v.name} 的转嫁被拒绝,攻击继续结算`, cls: 'act' });
-      g.askDodge = (v.id === g.human);
       const r = nsEngine.core.attackPlayer(g, atk, v, { suit: pd.suit, isEvo: pd.isEvo, allowBetray: false, noDodge: false, cardId: pd.cardId });
       return { ok: true, result: r };
     }
@@ -323,12 +316,11 @@
     for (const tid of targets) {
       const t = g.players[tid];
       if (!t || t.dead) continue;
-      g.askDodge = (tid === g.human);
       const r = nsEngine.core.attackPlayer(g, atk, t, { suit: pd.suit, isEvo: pd.isEvo });
       if (r === 'pending') {
-        g.pending.multi = targets.slice(targets.indexOf(tid) + 1);
-        g.pending.isEvo = pd.isEvo;
-        g.pending.pid = pd.attacker;
+        const pe = nsEngine.core.lastPrompt(g);
+        pe.multi = targets.slice(targets.indexOf(tid) + 1);
+        pe.isEvo = pd.isEvo;
         return;
       }
     }
@@ -346,33 +338,30 @@
   }
 
   /* 卖队友响应: 被攻击者把攻击转给 targetId(req 18.3: 需新目标同意) */
-  function respondBetray(g, pid, targetId) {
-    const pd = g.pending;
-    if (!pd || pd.type !== 'dodge') return { ok: false, why: '无挂起的攻击询问' };
-    g.pending = null;
+  function respondBetray(g, pid, targetId, promptId) {
+    const pd = nsEngine.core.takePrompt(g, ['dodge'], pid, promptId);
+    if (!pd) return { ok: false, why: '无挂起的攻击询问' };
     const v = g.players[pid];
     const bi = v.hand.findIndex(c => c.key === 'funBetray');
     if (bi < 0 || g.usedBetray) return { ok: false, why: '无卖队友或本局已用过' };
     const nt = g.players[targetId];
     if (!nt || nt.dead || nt.id === pid || nt.id === pd.attacker) return { ok: false, why: '目标无效' };
     const atk = g.players[pd.attacker];
-    if (nt.id !== g.human) {
+    if (!g.isHuman(nt.id)) {
       // AI新目标: 引擎侧同意判定; 拒绝则不消耗牌,攻击继续对原目标结算
       if (!aiBetrayConsent(g, nt, pd.dmg)) {
         g.log.push({ t: g.round, txt: `${nt.name} 拒绝被转嫁,攻击继续结算`, cls: 'act' });
-        g.askDodge = (v.id === g.human);
         const r = nsEngine.core.attackPlayer(g, atk, v, { suit: pd.suit, isEvo: pd.isEvo, allowBetray: false, noDodge: pd.noDodge, cardId: pd.cardId });
         return { ok: true, result: r };
       }
       const bc = v.hand.splice(bi, 1)[0];
       g.discard.push(bc); g.usedBetray = true;
       g.log.push({ t: g.round, txt: `${v.name}【卖队友】把攻击转给了${nt.name}(对方同意)!`, cls: 'act' });
-      g.askDodge = false;
       const r = nsEngine.core.attackPlayer(g, atk, nt, { suit: pd.suit, isEvo: pd.isEvo, allowBetray: false, noDodge: pd.noDodge, cardId: pd.cardId });
       return { ok: true, result: r === 'pending' ? r : 'redirected' };
     }
     // 人类新目标: 挂起同意询问(dodge + ctx.betrayConsent), 经 respondDodge 作答(yes=同意); 牌暂不消耗,拒绝则退回
-    g.pending = { type: 'dodge', attacker: pd.attacker, target: nt.id, dmg: pd.dmg, suit: pd.suit, cardId: pd.cardId, isEvo: pd.isEvo, srcId: pd.attacker, ctx: { betrayConsent: true, betrayer: pid } };
+    nsEngine.core.setPrompt(g, { type: 'dodge', pid: nt.id, attacker: pd.attacker, target: nt.id, dmg: pd.dmg, suit: pd.suit, cardId: pd.cardId, isEvo: pd.isEvo, srcId: pd.attacker, ctx: { betrayConsent: true, betrayer: pid } });
     return { ok: true, result: 'pending-consent' };
   }
 

@@ -7,9 +7,11 @@
  *   discardPhase, endTurn, playCard, equipCard, deployUnit, publicView, aiTurn,
  *   discardCards, playerLeave, nextAlive, draw, spec, effectiveCost, attackPlayer,
  *   loseHp, checkVictory, evolvePick, tryEvolve, lordCanRedraw, lordRedraw
+ * P2 新增导出(追加, 不改旧键): drive, timeoutPrompt, duePrompts, promptCount
  * 另向共享命名空间暴露内部工具(供 battle/tricks/skills 调用, 不进聚合导出):
  *   judgeCard, discardFromHand, queueEvo, onBecomeTarget, unequipArmor, unitDie,
- *   aoeOrder 及 makeRng/buildDeck 等。
+ *   aoeOrder 及 makeRng/buildDeck 等; P2 提示层: setPrompt/takePrompt/firstPrompt/
+ *   hasBlockingPrompt/findPrompt/groupOpen/groupAdd/groupHasOpen/purgeDeadGroupPrompts。
  * ==========================================================================*/
 (function (root) {
   'use strict';
@@ -48,21 +50,120 @@
 
   /* ---------------- 游戏状态 ---------------- */
   function createGame(opts) {
+    opts = opts || {};
     const rnd = makeRng(opts.seed || Date.now());
+    // P2 多人化: humanSet 多人类集合 + prompts 多槽提示层;
+    // human 保留为"第一个人类 pid"的兼容属性(旧代码/测试只读不写), isHuman(pid) 为统一判定入口。
+    const humans = [];
+    if (Array.isArray(opts.humans)) { for (const h of opts.humans) if (h !== null && h !== undefined) humans.push(h); }
+    else if (opts.human !== undefined && opts.human !== null) humans.push(opts.human);
+    if (!humans.length) humans.push(0); // 无参数时默认 0 号为主角(与旧版 human ?? 0 一致)
     const g = {
       rnd, log: [], over: false, winner: null, round: 1, turn: 0,
       players: [], deck: [], discard: [], event: null, eventSuit: null,
-      reshuffleCount: 0, pending: null, // {type, target, attacker, ctx}
-      human: opts.human ?? 0, // 人类玩家下标(用于AI托管判定)
+      reshuffleCount: 0,
+      pending: null, // 兼容别名(下方以 accessor 覆盖: 读=第一个未决提示, 写=遗留单槽语义)
+      prompts: new Map(), // promptId -> {id,pid,type,ctx,srcId,dmg,deadlineMs,createdAt,...}
+      promptSeq: 0, // 提示 id 计数器('pd-<seq>')
+      humanSet: new Set(humans), // 多人类集合(核心)
+      human: humans[0], // 第一个人类 pid(向后兼容属性)
       achievements: {}, kills: {}, // 成就与击杀记录
       turnAttacked: {}, // 每回合是否已使用做法假了(评测机连发/次数)
       nextRoundAttackCost: 0, // 感谢CCF 下回合攻击费+1
       usedBetray: false, usedClone: false, // 欢乐牌一局一次标记(全局简化)
       pendingEvo: {}, // pid -> [候选进化牌型key]
-      evoWait: null, // 人类待选择进化 {pid, keys}
+      evoWait: null, // 人类待选择进化 {pid, keys}(兼容字段, 与 evo 提示条目双写)
     };
+    // g.pending 兼容别名: 读=第一个未决提示(插入序); 写=遗留语义(清空全部提示, 非null则注册一条新提示)
+    Object.defineProperty(g, 'pending', {
+      enumerable: true, configurable: true,
+      get() { return firstPrompt(g); },
+      set(v) { g.prompts.clear(); if (v !== null && v !== undefined) setPrompt(g, v); },
+    });
+    g.isHuman = (pid) => g.humanSet.has(pid);
     g.log.push({ t: 0, txt: '=== OI杀 v4.0 开局 ===', cls: 'evt' });
     return g;
+  }
+
+  /* ---------------- 多人提示层(P2 核心) ---------------- */
+  // 提示默认超时(ms): 回合内选择类 45s, 响应类 10s; 计时权威在服务器, 引擎只存/暴露(deadlineMs/createdAt)
+  const TURN_PROMPT_TYPES = ['discard', 'evo', 'lordRedraw'];
+  /* 由提示负载推断应答者 pid(遗留 setter/兜底用; 内部创建均显式传 pid) */
+  function pidOfPromptType(data) {
+    switch (data.type) {
+      case 'dodge': return data.target;
+      case 'counter': case 'aoeResp': case 'argueResp': case 'harvest': return data.victim;
+      case 'cold': case 'bbst': case 'chase': return data.attacker;
+      case 'report': return data.srcId;
+      default: return data.pid;
+    }
+  }
+  /* 注册一条提示(多槽): 返回条目对象(供调用方后续补充 ctx/multi 等), 同时记录到 g._lastPrompt */
+  function setPrompt(g, data) {
+    const id = 'pd-' + (++g.promptSeq);
+    const entry = Object.assign({}, data, {
+      id,
+      pid: (data.pid !== undefined && data.pid !== null) ? data.pid : pidOfPromptType(data),
+      deadlineMs: (data.deadlineMs !== undefined && data.deadlineMs !== null) ? data.deadlineMs
+        : (TURN_PROMPT_TYPES.indexOf(data.type) >= 0 ? 45000 : 10000),
+      createdAt: data.createdAt || Date.now(),
+    });
+    g.prompts.set(id, entry);
+    g._lastPrompt = entry;
+    return entry;
+  }
+  function firstPrompt(g) {
+    for (const e of g.prompts.values()) return e; // Map 迭代序 = 插入序(座次/事件序)
+    return null;
+  }
+  function lastPrompt(g) { return g._lastPrompt || firstPrompt(g); }
+  /* 取走一条未决提示: promptId 指定时按 id 精确取走(校验类型与应答者), 否则取该 pid 的第一个匹配类型提示 */
+  function takePrompt(g, types, pid, promptId) {
+    if (promptId !== undefined && promptId !== null) {
+      const e = g.prompts.get(promptId);
+      if (e && types.indexOf(e.type) >= 0 && e.pid === pid) { g.prompts.delete(promptId); return e; }
+      return null;
+    }
+    for (const e of g.prompts.values()) {
+      if (types.indexOf(e.type) >= 0 && e.pid === pid) { g.prompts.delete(e.id); return e; }
+    }
+    return null;
+  }
+  /* 是否存在"阻断行动"的提示; evo 等回合尾选择不阻断(与旧 evoWait 不阻断行动语义一致) */
+  function hasBlockingPrompt(g) {
+    for (const e of g.prompts.values()) if (e.type !== 'evo') return true;
+    return false;
+  }
+  function findPrompt(g, opts) {
+    for (const e of g.prompts.values()) {
+      if (opts.type && e.type !== opts.type) continue;
+      if (opts.pid !== undefined && opts.pid !== null && e.pid !== opts.pid) continue;
+      if (opts.ctxKey && (!e.ctx || e.ctx[opts.ctxKey] !== opts.ctxVal)) continue;
+      return e;
+    }
+    return null;
+  }
+  /* 多目标事件提示组(AOE/祖安对线/题解大会的并行人提示): 组状态常驻 g._promptGroups(局末随 g 弃置) */
+  function groupOpen(g, groupId, resume) {
+    if (!g._promptGroups) g._promptGroups = new Map();
+    let gr = g._promptGroups.get(groupId);
+    if (!gr) { gr = { resume, resolved: new Set() }; g._promptGroups.set(groupId, gr); }
+    return gr;
+  }
+  function groupGet(g, groupId) { return g._promptGroups && g._promptGroups.get(groupId); }
+  function groupAdd(g, groupId, pid) { const gr = groupGet(g, groupId); if (gr) gr.resolved.add(pid); return gr; }
+  function groupHasOpen(g, groupId) {
+    for (const e of g.prompts.values()) if (e.ctx && (e.ctx.groupId === groupId || e.ctx.aoeId === groupId || e.ctx.harvestId === groupId)) return true;
+    return false;
+  }
+  /* 组内已死玩家的未决提示自动作废(该段效果不结算, 与"死亡目标跳过"语义一致), 防组挂起死锁 */
+  function purgeDeadGroupPrompts(g, groupId) {
+    for (const e of g.prompts.values()) {
+      if (e.ctx && (e.ctx.groupId === groupId || e.ctx.aoeId === groupId || e.ctx.harvestId === groupId)) {
+        const p = g.players[e.pid];
+        if (p && p.dead) g.prompts.delete(e.id);
+      }
+    }
   }
 
   function setup(g, names) {
@@ -328,8 +429,10 @@
       const evoKeys = (g.pendingEvo[pid] || []).slice();
       g.pendingEvo[pid] = [];
       if (evoKeys.length) {
-        if (pid === g.human) g.evoWait = { pid, keys: evoKeys };
-        else { for (const k of evoKeys) { if (tryEvolve(g, pid, k)) break; } }
+        if (g.isHuman(pid)) {
+          g.evoWait = { pid, keys: evoKeys }; // 兼容字段(测试直接读写)
+          setPrompt(g, { type: 'evo', pid, keys: evoKeys.slice() }); // P2: UI回调 prompt 化(双写, 互不影响)
+        } else { for (const k of evoKeys) { if (tryEvolve(g, pid, k)) break; } }
       }
       p.damageDealt = 0;
     }
@@ -601,6 +704,7 @@
   }
   /* 人类进化选择: key 为 null 表示放弃 */
   function evolvePick(g, pid, key) {
+    takePrompt(g, ['evo'], pid); // P2: 移除进化提示条目(若有)
     if (g.evoWait && g.evoWait.pid === pid) g.evoWait = null;
     if (key) tryEvolve(g, pid, key);
   }
@@ -683,14 +787,14 @@
       if (hasBetray && !g.usedBetray) {
         const others = g.players.filter(q => !q.dead && q.id !== attacker.id && q.id !== target.id);
         if (others.length) {
-          if (g.askDodge) {
-            g.pending = { type: 'dodge', attacker: attacker.id, target: target.id, dmg, suit: opts.suit || 'spade', cardId: opts.cardId, isEvo: opts.isEvo, ctx: { betrayAvail: true, betrayOptions: others.map(q => ({ id: q.id, name: q.name })) } };
+          if (g.isHuman(target.id)) { // 人类被攻击者: 挂起可转嫁询问(替代原 askDodge 幽灵标志)
+            setPrompt(g, { type: 'dodge', pid: target.id, attacker: attacker.id, target: target.id, dmg, suit: opts.suit || 'spade', cardId: opts.cardId, isEvo: opts.isEvo, ctx: { betrayAvail: true, betrayOptions: others.map(q => ({ id: q.id, name: q.name })) } });
             return 'pending';
           }
           // 引擎侧AI转嫁: 新目标为人类则挂起同意询问(经 respondDodge 作答), 为AI则按引擎判定
           const nt = others[Math.floor(g.rnd() * others.length)];
-          if (nt.id === g.human) {
-            g.pending = { type: 'dodge', attacker: attacker.id, target: nt.id, dmg, suit: opts.suit || 'spade', cardId: opts.cardId, isEvo: opts.isEvo, srcId: attacker.id, ctx: { betrayConsent: true, betrayer: target.id } };
+          if (g.isHuman(nt.id)) {
+            setPrompt(g, { type: 'dodge', pid: nt.id, attacker: attacker.id, target: nt.id, dmg, suit: opts.suit || 'spade', cardId: opts.cardId, isEvo: opts.isEvo, srcId: attacker.id, ctx: { betrayConsent: true, betrayer: target.id } });
             return 'pending';
           }
           if (nsEngine.battle.aiBetrayConsent(g, nt, dmg)) {
@@ -698,7 +802,6 @@
             const bc = target.hand.splice(bi, 1)[0];
             g.discard.push(bc); g.usedBetray = true;
             g.log.push({ t: g.round, txt: `${target.name}【卖队友】把攻击转给了${nt.name}(对方同意)!`, cls: 'act' });
-            g.askDodge = (nt.id === g.human);
             return attackPlayer(g, attacker, nt, { suit: opts.suit || 'spade', isEvo: opts.isEvo, allowBetray: false, cardId: opts.cardId, noDodge: opts.noDodge });
           }
           g.log.push({ t: g.round, txt: `${nt.name} 拒绝被转嫁,攻击继续结算`, cls: 'act' });
@@ -709,8 +812,8 @@
     if (evt !== 'spade' && !opts.noDodge) {
       if (target.identity === 'lord') {
         const helpers = g.players.filter(q => !q.dead && q.id !== target.id && q.id !== attacker.id && nsEngine.battle.canDodge(g, q));
-        if (g.askDodge) {
-          g.pending = { type: 'dodge', attacker: attacker.id, target: target.id, dmg, suit: opts.suit || 'spade', cardId: opts.cardId, isEvo: opts.isEvo, helpers: helpers.map(q => ({ id: q.id, name: q.name })) };
+        if (g.isHuman(target.id)) {
+          setPrompt(g, { type: 'dodge', pid: target.id, attacker: attacker.id, target: target.id, dmg, suit: opts.suit || 'spade', cardId: opts.cardId, isEvo: opts.isEvo, helpers: helpers.map(q => ({ id: q.id, name: q.name })) });
           return 'pending';
         }
         if (nsEngine.battle.canDodge(g, target)) return nsEngine.battle.resolveDodge(g, target, true, dmg, opts.suit || 'spade', attacker);
@@ -718,9 +821,9 @@
         return nsEngine.battle.resolveHit(g, attacker, target, dmg, opts);
       }
       if (nsEngine.battle.canDodge(g, target)) {
-        if (g.askDodge) {
-          // 人类响应: 挂起 pending
-          g.pending = { type: 'dodge', attacker: attacker.id, target: target.id, dmg, suit: opts.suit || 'spade', cardId: opts.cardId, isEvo: opts.isEvo };
+        if (g.isHuman(target.id)) {
+          // 人类响应: 挂起提示
+          setPrompt(g, { type: 'dodge', pid: target.id, attacker: attacker.id, target: target.id, dmg, suit: opts.suit || 'spade', cardId: opts.cardId, isEvo: opts.isEvo });
           return 'pending';
         } else {
           // AI/自动: 有WA则出
@@ -737,7 +840,7 @@
   function canPlay(g, pid, cardIdx) {
     const p = g.players[pid];
     if (g.turn !== pid || p.dead || p.skipPlay) return { ok: false, why: '非行动阶段' };
-    if (g.pending) return { ok: false, why: '等待响应中' };
+    if (hasBlockingPrompt(g)) return { ok: false, why: '等待响应中' };
     const c = p.hand[cardIdx];
     if (!c) return { ok: false, why: '无此牌' };
     const s = spec(c.key);
@@ -773,10 +876,8 @@
       if (extra > 0) p.mp -= extra;
       if (!p.canAttack) { p.hand.push(c); return { ok: false, why: '本回合不能攻击' }; }
       g.log.push({ t: g.round, txt: `${p.name}【碾压】将黑色【${s.name}】当作做法假了`, cls: 'act' });
-      g.askDodge = (t.id === g.human);
       const r2 = attackPlayer(g, p, t, { suit: c.suit, isEvo: false });
-      if (r2 === 'pending') { g.discard.push(c); g.pending.pid = pid; g.pending.suit = c.suit; g.pending.isEvo = false; }
-      else g.discard.push(c);
+      g.discard.push(c);
       return { ok: true, result: r2 };
     }
 
@@ -785,11 +886,8 @@
       spend(g, p, cost);
       if (p.canAttack === false) { p.hand.push(c); return { ok: false, why: '本回合不能攻击(躺赢)' }; }
       if (t && t.id === pid) { p.hand.push(c); return { ok: false, why: '不能攻击自己' }; }
-      g.askDodge = (t.id === g.human); // 人类目标 -> 挂起WA响应
       const r = attackPlayer(g, p, t, { suit: c.suit, cardId: c.id, dmg: 1, isEvo: c.key === 'attackEvo' });
-      if (r === 'pending') { g.discard.push(c); g.pending.card = c; g.pending.pid = pid; g.pending.cardIdx = -1; }
-      else if (r === 'guard' || r === 'dodged' || r === 'blocked') { g.discard.push(c); }
-      else { g.discard.push(c); }
+      g.discard.push(c);
       return { ok: true, result: r };
     }
     if (nsData.cards.isDodgeKey(c.key) || c.key === 'counter' || c.key === 'counterEvo') { p.hand.push(c); return { ok: false, why: '响应牌,非出牌阶段使用' }; }
@@ -918,7 +1016,8 @@
         const cont = { kind: 'killUnit', ctx: { type: 'killUnit', srcId: pid, trickKey: c.key, targetId: target.id, cardKey: c.key, cardId: c.id } };
         const cr = nsEngine.tricks.tryCounter(g, target.id, c.key, pid, cont);
         if (cr === 'pending') {
-          if (!(g.pending.ctx && g.pending.ctx.type === 'counterChain')) g.pending.ctx = cont.ctx;
+          const pdE = lastPrompt(g);
+          if (!(pdE.ctx && pdE.ctx.type === 'counterChain')) pdE.ctx = cont.ctx;
           return { ok: true, result: 'pending' };
         }
         if (cr === true) { g.log.push({ t: g.round, txt: `${target.name} 特判抵消了${spec(c.key).name}`, cls: 'act' }); return { ok: true, result: 'countered' }; }
@@ -932,14 +1031,14 @@
         g.log.push({ t: g.round, txt: `${p.name} 使用【${s.name}】AOE!`, cls: 'evt' });
         const targets = aoeOrder(g, pid); // L7: 从使用者下家按行动顺序
         if (!targets.length) return { ok: true };
-        const aoeCtx = { type: 'aoe', trickKey: c.key, srcId: pid, dmg: ad, current: targets[0], remaining: targets.slice(1) };
+        const aoeCtx = { type: 'aoe', trickKey: c.key, srcId: pid, dmg: ad, current: targets[0], remaining: targets.slice(1), aoeId: 'aoe-' + (++g.promptSeq) };
         const cr = nsEngine.tricks.counterAsk(g, targets[0], c.key, pid, { kind: 'aoe', ctx: aoeCtx });
         if (cr === 'pending') return { ok: true, result: 'pending' };
         if (cr === 'countered') g.log.push({ t: g.round, txt: `${g.players[targets[0]].name} 特判抵消了${s.name}`, cls: 'act' });
         else {
-          const r0 = nsEngine.tricks.aoeApplyOne(g, pid, c.key, ad, targets[0]);
+          const r0 = nsEngine.tricks.aoeApplyOne(g, pid, c.key, ad, targets[0], aoeCtx);
           if (r0 === 'pending') {
-            g.pending.ctx = aoeCtx;
+            nsEngine.tricks.precreateAoe(g, lastPrompt(g).ctx); // P2: 批量预建其余人类受害者的提示(座次序)
             return { ok: true, result: 'pending' };
           }
         }
@@ -952,11 +1051,11 @@
         const targets = aoeOrder(g, pid); // L7: 从使用者下家按行动顺序
         p.hp = Math.min(p.maxHp, p.hp + 1); // 使用者本人先回复
         if (!targets.length) return { ok: true };
-        const aoeCtx = { type: 'aoe', trickKey: c.key, srcId: pid, dmg: 1, current: targets[0], remaining: targets.slice(1) };
+        const aoeCtx = { type: 'aoe', trickKey: c.key, srcId: pid, dmg: 1, current: targets[0], remaining: targets.slice(1), aoeId: 'aoe-' + (++g.promptSeq) };
         const cr = nsEngine.tricks.counterAsk(g, targets[0], c.key, pid, { kind: 'aoe', ctx: aoeCtx });
         if (cr === 'pending') return { ok: true, result: 'pending' };
         if (cr === 'countered') g.log.push({ t: g.round, txt: `${g.players[targets[0]].name} 特判抵消了CCF放水`, cls: 'act' });
-        else nsEngine.tricks.aoeApplyOne(g, pid, c.key, 1, targets[0]);
+        else nsEngine.tricks.aoeApplyOne(g, pid, c.key, 1, targets[0], aoeCtx);
         nsEngine.tricks.resumeAoe(g, aoeCtx);
         return { ok: true, result: 'done' };
       }
@@ -971,9 +1070,9 @@
         const order = [];
         let cur = pid;
         for (let i = 0; i < alive.length; i++) { order.push(cur); cur = nextAlive(g, cur); }
-        const ctx = { type: 'harvest', srcId: pid, cards, order, pos: 0 };
+        const ctx = { type: 'harvest', srcId: pid, cards, order, pos: 0, harvestId: 'harvest-' + (++g.promptSeq) };
         nsEngine.tricks.harvestStep(g, ctx);
-        return { ok: true, result: g.pending ? 'pending' : 'done' };
+        return { ok: true, result: g.prompts.size ? 'pending' : 'done' };
       }
       case 'funGiveup': {
         spend(g, p, cost);
@@ -997,7 +1096,7 @@
         if (!t2 || t2.dead || t2.id === pid || t2.id === t.id) { p.hand.push(c); return { ok: false, why: '需要第2名(不同)目标' }; }
         spend(g, p, cost); g.discard.push(c);
         g.log.push({ t: g.round, txt: `${p.name}【祖安对线】与${t.name}、${t2.name}公开对质:各弃1张或受1伤(各自选)`, cls: 'act' });
-        return nsEngine.tricks.argueStep(g, pid, [t.id, t2.id]);
+        return nsEngine.tricks.argueStep(g, pid, [t.id, t2.id], 'argue-' + (++g.promptSeq));
       }
       case 'funCcf': {
         spend(g, p, cost); g.discard.push(c);
@@ -1006,11 +1105,11 @@
         const targets = aoeOrder(g, pid);
         p.hp = Math.min(p.maxHp, p.hp + 1); // 使用者本人先回复
         if (!targets.length) return { ok: true };
-        const aoeCtx = { type: 'aoe', trickKey: c.key, srcId: pid, dmg: 0, current: targets[0], remaining: targets.slice(1) };
+        const aoeCtx = { type: 'aoe', trickKey: c.key, srcId: pid, dmg: 0, current: targets[0], remaining: targets.slice(1), aoeId: 'aoe-' + (++g.promptSeq) };
         const cr = nsEngine.tricks.counterAsk(g, targets[0], c.key, pid, { kind: 'aoe', ctx: aoeCtx });
         if (cr === 'pending') return { ok: true, result: 'pending' };
         if (cr === 'countered') g.log.push({ t: g.round, txt: `${g.players[targets[0]].name} 特判抵消了感谢CCF`, cls: 'act' });
-        else nsEngine.tricks.aoeApplyOne(g, pid, c.key, 0, targets[0]);
+        else nsEngine.tricks.aoeApplyOne(g, pid, c.key, 0, targets[0], aoeCtx);
         nsEngine.tricks.resumeAoe(g, aoeCtx);
         return { ok: true, result: 'done' };
       }
@@ -1082,25 +1181,28 @@
   }
 
   /* ---------------- 状态视图 ---------------- */
-  /* pending 视图(H-3): 在基础字段之上, 当底层 pending 存在 srcId/dmg 时额外暴露,
+  /* 提示视图(H-3/P2): 在基础字段之上, 当底层提示存在 srcId/dmg 时额外暴露,
    * 供 UI 展示"谁发起的询问"与"伤害值"(attack/counter/aoe/argue/betray 等) */
-  function pendingView(pd) {
-    if (!pd) return null;
+  function promptView(e) {
+    if (!e) return null;
     const v = {
-      type: pd.type, target: pd.target, attacker: pd.attacker, victim: pd.victim,
-      trickKey: pd.trickKey, helpers: pd.helpers || null, ctx: pd.ctx || null,
+      id: e.id, pid: e.pid, type: e.type, target: e.target, attacker: e.attacker, victim: e.victim,
+      trickKey: e.trickKey, helpers: e.helpers || null, ctx: e.ctx || null,
+      deadlineMs: e.deadlineMs, createdAt: e.createdAt,
     };
-    if (pd.srcId !== undefined) v.srcId = pd.srcId;
-    if (pd.dmg !== undefined) v.dmg = pd.dmg;
+    if (e.srcId !== undefined) v.srcId = e.srcId;
+    if (e.dmg !== undefined) v.dmg = e.dmg;
     return v;
   }
+  function pendingView(pd) { return promptView(pd); }
   function publicView(g, pid) {
     const p = g.players[pid];
     return {
       over: g.over, winner: g.winner, round: g.round, turn: g.turn,
       event: g.event, eventSuit: g.eventSuit,
       deck: g.deck.length, discard: g.discard.length,
-      pending: pendingView(g.pending),
+      pending: pendingView(firstPrompt(g)),
+      prompts: [...g.prompts.values()].map(promptView), // P2: 全量未决提示(多槽; 供服务器/UI 分发)
       achievements: g.achievements || null,
       lordCanRedraw: lordCanRedraw(g),
       evoWait: g.evoWait ? { pid: g.evoWait.pid, keys: g.evoWait.keys.map(k => ({ base: k, evo: nsData.cards.EVO_MAP[k], name: nsData.cards.EVO_MAP[k] ? spec(nsData.cards.EVO_MAP[k]).name : k })) } : null,
@@ -1158,7 +1260,7 @@
       return;
     }
     let acted = true, guard = 0;
-    while (acted && guard++ < 60 && !g.over && !g.pending) {
+    while (acted && guard++ < 60 && !g.over && !hasBlockingPrompt(g)) {
       acted = false;
       // 1. 濒死自救/治疗
       const healIdx = p.hand.findIndex(c => c.key === 'heal');
@@ -1174,11 +1276,11 @@
             const n = Math.min(3, enemies.length);
             const tids = enemies.slice(0, n).map(q => q.id);
             const r = nsEngine.tricks.fangAttack(g, pid, tids, atkIdx);
-            if (r.ok) { acted = true; if (g.pending) break; continue; }
+            if (r.ok) { acted = true; if (hasBlockingPrompt(g)) break; continue; }
           } else {
             const t = g.players[pickTarget(g, pid, enemies)];
             const r = playCard(g, pid, atkIdx, t.id);
-            if (r.ok) { acted = true; if (g.pending) break; continue; }
+            if (r.ok) { acted = true; if (hasBlockingPrompt(g)) break; continue; }
           }
         }
       }
@@ -1188,7 +1290,7 @@
         if (enemies.length) {
           const t = enemies[Math.floor(g.rnd() * enemies.length)];
           const r = nsEngine.tricks.kspAttack(g, pid, t.id);
-          if (r.ok) { acted = true; if (g.pending) break; continue; }
+          if (r.ok) { acted = true; if (hasBlockingPrompt(g)) break; continue; }
         }
       }
       // 2c. 神犇碾压: 无攻击牌时用黑色手牌当攻击
@@ -1199,7 +1301,7 @@
           if (enemies.length) {
             const t = enemies[Math.floor(g.rnd() * enemies.length)];
             const r = playCard(g, pid, blackIdx, t.id);
-            if (r.ok) { acted = true; if (g.pending) break; continue; }
+            if (r.ok) { acted = true; if (hasBlockingPrompt(g)) break; continue; }
           }
         }
       }
@@ -1229,7 +1331,7 @@
           const enemies = g.players.filter(q => !q.dead && q.id !== pid);
           if (k === 'funArgue') {
             // 祖安对线需2名目标; AI仅指向AI(人类目标的选择需UI挂起)
-            const aiEnemies = enemies.filter(q => q.id !== g.human);
+            const aiEnemies = enemies.filter(q => !g.isHuman(q.id));
             if (aiEnemies.length >= 2) {
               const t1 = aiEnemies[Math.floor(g.rnd() * aiEnemies.length)];
               let t2 = aiEnemies[Math.floor(g.rnd() * aiEnemies.length)];
@@ -1243,7 +1345,7 @@
         }
         if (needs.includes(k) && target === null) { acted = false; break; }
         const r = playCard(g, pid, trickIdx, target, target2);
-        if (r.ok) { acted = true; if (g.pending) break; continue; }
+        if (r.ok) { acted = true; if (hasBlockingPrompt(g)) break; continue; }
         if (!r.ok && k === 'o2' && !p.hand.some(x => x.key === 'attack')) { break; }
       }
       // 6. 单位攻击: 就绪单位消灭敌人单位(H6)
@@ -1341,6 +1443,90 @@
     return { ok: true };
   }
 
+  /* ---------------- 多人调度(P2 新增) ---------------- */
+  /* 异步调度器 drive(g, {thinkMs, difficulty, onState, onPrompt, onEvent}):
+   * - AI 回合: 判定/摸牌后按 think 延迟执行既有 aiTurn(逻辑不改, P3 才重写AI), 每次步进后继续循环;
+   * - 人类提示挂起: 调 onPrompt(g, prompt) 后返回 {status:'prompt', promptId, pid, type},
+   *   由外部调 respondX(带 promptId)后再次调用 drive 恢复;
+   * - 人类回合: 代跑判定/摸牌(确定性)后返回 {status:'human-turn', pid},
+   *   由外部经 playCard/discardCards/discardPhase/endTurn 驱动后再调 drive;
+   * - 对局结束返回 {status:'over', winner}。默认 think 延迟 0(测试无等待); difficulty 给 800~2500ms 人形延迟。 */
+  async function drive(g, opts) {
+    opts = opts || {};
+    let evCursor = (g._evCursor || 0);
+    g._evCursor = g.log.length;
+    const emitEvents = () => {
+      if (!opts.onEvent) { evCursor = g.log.length; return; }
+      while (evCursor < g.log.length) {
+        const l = g.log[evCursor++];
+        try { opts.onEvent({ kind: 'log', t: l.t, txt: l.txt, cls: l.cls }); } catch (e) { /* 回调异常不中断引擎 */ }
+      }
+    };
+    const think = async () => {
+      let ms = 0;
+      if (opts.thinkMs !== undefined && opts.thinkMs !== null) ms = Math.max(0, opts.thinkMs);
+      else if (opts.difficulty) {
+        const band = opts.difficulty === 'hard' ? 700 : 1700; // easy/normal 800~2500, hard 800~1500
+        ms = 800 + Math.floor(g.rnd() * band);
+      }
+      if (ms > 0) await new Promise(res => setTimeout(res, ms));
+    };
+    for (let guard = 0; guard < 100000 && !g.over; guard++) {
+      emitEvents();
+      const pr = firstPrompt(g);
+      if (pr) {
+        if (opts.onPrompt) { try { opts.onPrompt(g, pr); } catch (e) { /* 回调异常不中断引擎 */ } }
+        return { status: 'prompt', promptId: pr.id, pid: pr.pid, type: pr.type };
+      }
+      const pid = g.turn;
+      const p = g.players[pid];
+      if (opts.onState) { try { opts.onState(g, pid); } catch (e) { /* 回调异常不中断引擎 */ } }
+      if (g.isHuman(pid)) {
+        if (p.dead) { endTurn(g, pid); continue; } // 死亡人类仅轮转
+        judgePhase(g, pid); drawPhase(g, pid);
+        emitEvents();
+        if (g.over) break;
+        return { status: 'human-turn', pid };
+      }
+      judgePhase(g, pid); drawPhase(g, pid); // AI 回合(死亡者自动轮转由 aiTurn 处理)
+      emitEvents();
+      if (g.over) break;
+      await think();
+      aiTurn(g, pid); // aiTurn 内部若挂起人类提示, 下一轮循环顶部交 onPrompt
+    }
+    emitEvents();
+    return { status: g.over ? 'over' : 'cap', winner: g.winner, over: g.over };
+  }
+
+  /* 提示超时默认应答(计时权威在服务器, 引擎只提供语义): 按各 respondX 的"否/放弃"路径结算并移除该提示 */
+  function timeoutPrompt(g, promptId) {
+    const e = g.prompts.get(promptId);
+    if (!e) return { ok: false, why: '提示不存在或已解决' };
+    switch (e.type) {
+      case 'dodge': return nsEngine.battle.respondDodge(g, e.pid, false, undefined, promptId);
+      case 'counter': return nsEngine.tricks.respondCounter(g, e.pid, false, promptId);
+      case 'cold': return nsEngine.battle.respondCold(g, e.pid, false, promptId);
+      case 'bbst': return nsEngine.battle.respondBbst(g, e.pid, false, promptId);
+      case 'chase': return nsEngine.battle.respondChase(g, e.pid, false, promptId);
+      case 'aoeResp': case 'argueResp': return nsEngine.tricks.respondAoeResp(g, e.pid, false, promptId);
+      case 'harvest': return nsEngine.tricks.respondHarvest(g, e.pid, null, promptId); // 放弃=不选牌
+      case 'report': return nsEngine.tricks.respondReport(g, e.pid, null, promptId); // 放弃=不弃牌(提示已移除)
+      case 'evo': evolvePick(g, e.pid, null); return { ok: true, result: 'declined' }; // 放弃进化
+      case 'discard': discardCards(g, e.pid, []); return { ok: true, result: 'declined' };
+      case 'lordRedraw': return { ok: true, result: 'declined' };
+      default: return { ok: false, why: '未知提示类型: ' + e.type };
+    }
+  }
+  /* 已过截止时间的提示列表(deadlineMs 自 createdAt 起算; now 缺省为当前时间) */
+  function duePrompts(g, now) {
+    const nowMs = now === undefined ? Date.now() : now;
+    const out = [];
+    for (const e of g.prompts.values()) if (nowMs - e.createdAt >= e.deadlineMs) out.push(e);
+    return out;
+  }
+  /* 未决提示数 */
+  function promptCount(g) { return g.prompts.size; }
+
   /* ---------------- 导出 ---------------- */
   const api = {
     createGame, setup, startTurn, judgePhase, drawPhase, discardPhase, endTurn,
@@ -1348,13 +1534,18 @@
     discardCards, playerLeave,
     nextAlive, draw, spec, effectiveCost, attackPlayer, loseHp, checkVictory,
     evolvePick, tryEvolve, lordCanRedraw, lordRedraw,
+    // P2 新增导出(不删除/不改名任何旧键):
+    drive, timeoutPrompt, duePrompts, promptCount,
   };
   if (typeof module !== 'undefined' && module.exports) module.exports = api;
   Object.assign(me, api, {
     // 内部工具: 供 battle/tricks/skills 与后续阶段跨模块调用(不进 54 键聚合导出)
     makeRng, buildDeck, cardName, discardCard, discardFromHand, domOf, spend, gainMp,
     judgeCard, end, settleAchievements, queueEvo, checkAwaken, forceEndByCount,
-    canPlay, pendingView, pickTarget,
+    canPlay, pendingView, promptView, pickTarget,
     onBecomeTarget, unequipArmor, unitDie, aoeOrder,
+    // P2 提示层工具
+    setPrompt, takePrompt, firstPrompt, lastPrompt, hasBlockingPrompt, findPrompt,
+    groupOpen, groupGet, groupAdd, groupHasOpen, purgeDeadGroupPrompts,
   });
 })(typeof window !== 'undefined' ? window : globalThis);

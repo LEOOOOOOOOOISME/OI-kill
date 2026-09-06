@@ -1,7 +1,8 @@
 /* ============================================================================
- * OI杀 v4.0 · src/engine/index.js — 引擎聚合入口(P1a 拆分)
- * 按旧 game.js api 对象逐键合并 data/* 与 engine/* 的导出, 共 54 键,
- * 键名/取值与拆分前完全一致(顺序亦与旧 api 一致)。
+ * OI杀 v4.0 · src/engine/index.js — 引擎聚合入口(P1a 拆分, P2 增键)
+ * 按旧 game.js api 对象逐键合并 data/* 与 engine/* 的导出: 原 54 键
+ * 键名/取值与拆分前完全一致(顺序亦与旧 api 一致), 末尾追加 P2 新增 4 键
+ * (drive / timeoutPrompt / duePrompts / promptCount)。
  * Node: require 全部子模块后合并, module.exports = 合并结果。
  * 浏览器: 子模块已按 index.html 脚本顺序挂载到共享命名空间,
  *         此处从 OIKill.data.* / OIKill.engine.* 合并后挂载到 OIKill.engine.index,
@@ -32,7 +33,7 @@
   const t = nsEngine.tricks;
   const s = nsEngine.skills;
 
-  // 与旧 game.js api 对象逐键一致(共 54 键; 不含各模块的内部工具键)
+  // 与旧 game.js api 对象逐键一致(原 54 键; 不含各模块的内部工具键; 末尾追加 P2 新增 4 键)
   const api = {
     CARDS: dCards.CARDS, DECK_COUNT: dCards.DECK_COUNT, PROFESSIONS: dProf.PROFESSIONS, DOMAINS: dProf.DOMAINS, IDENTITIES: dId.IDENTITIES, ID_TABLE: dId.ID_TABLE, EVENTS: dId.EVENTS, EVO_MAP: dCards.EVO_MAP, SKILLS: dProf.SKILLS,
     createGame: c.createGame, setup: c.setup, startTurn: c.startTurn, judgePhase: c.judgePhase, drawPhase: c.drawPhase, discardPhase: c.discardPhase, endTurn: c.endTurn,
@@ -42,6 +43,8 @@
     unitAttack: s.unitAttack, skillUse: s.skillUse, lordCanRedraw: c.lordCanRedraw, lordRedraw: c.lordRedraw,
     nextAlive: c.nextAlive, draw: c.draw, spec: c.spec, effectiveCost: c.effectiveCost, attackPlayer: c.attackPlayer, loseHp: c.loseHp, checkVictory: c.checkVictory,
     suitZh: dId.suitZh, isBlack: dId.isBlack, isRed: dId.isRed, isAttackKey: dCards.isAttackKey, isDodgeKey: dCards.isDodgeKey,
+    // ---- P2 新增(仅追加, 不删不改旧键) ----
+    drive: c.drive, timeoutPrompt: c.timeoutPrompt, duePrompts: c.duePrompts, promptCount: c.promptCount,
   };
 
   if (typeof module !== 'undefined' && module.exports) module.exports = api;

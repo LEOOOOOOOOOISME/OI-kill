@@ -23,6 +23,10 @@
     require('./battle.js');
     require('./tricks.js');
     require('./skills.js');
+    // P3b: 引擎聚合入口末尾追加 AI 决策模块(difficulty→scorer→identity-policy→heuristics 由
+    // heuristics 内部按依赖序加载; 此时全部引擎模块已加载完成, 无加载环)。
+    // 该 require 不新增任何 58 键聚合导出(AI 模块仅挂共享命名空间 OIKill.ai.*)。
+    require('../ai/heuristics.js');
   }
 
   const dCards = nsData.cards;

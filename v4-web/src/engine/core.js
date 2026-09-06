@@ -20,6 +20,29 @@
   const nsEngine = NS.engine = NS.engine || {};
   const me = nsEngine.core = nsEngine.core || {};
 
+  /* ---------------- P3b: AI 决策模块接入(P3a 交付 src/ai/*) ---------------- */
+  /* 顶层 require('../ai/heuristics.js') 会与模块加载环互踩(heuristics 加载中途
+   * require battle.js, battle.js 顶层又反向 require heuristics 只能拿到未完成导出的 {}),
+   * 故延迟到首次调用(运行时全部模块已加载完成)再 require。
+   * 浏览器路径 index.html 尚未追加 ai 脚本(超出 P3b 范围), 回落共享命名空间
+   * OIKill.ai.heuristics(P4 在 index.html 加载后自动生效); 两者皆无则返回 null,
+   * 各调用点回落旧随机启发行为。 */
+  let _heu = null;
+  function aiHeu() {
+    if (_heu) return _heu;
+    if (typeof module !== 'undefined' && module.exports) {
+      try { _heu = require('../ai/heuristics.js'); } catch (e) { _heu = null; }
+    }
+    if (!_heu) _heu = (NS.ai && NS.ai.heuristics) || null;
+    return _heu;
+  }
+  /* 难度表(P3a difficulty.js): heuristics 已加载时其依赖会同步挂到 NS.ai.difficulty */
+  function aiDif() {
+    if (NS.ai && NS.ai.difficulty) return NS.ai.difficulty;
+    aiHeu();
+    return (NS.ai && NS.ai.difficulty) || null;
+  }
+
   /* ---------------- RNG ---------------- */
   function makeRng(seed) {
     let s = (seed >>> 0) || 1;
@@ -73,6 +96,7 @@
       usedBetray: false, usedClone: false, // 欢乐牌一局一次标记(全局简化)
       pendingEvo: {}, // pid -> [候选进化牌型key]
       evoWait: null, // 人类待选择进化 {pid, keys}(兼容字段, 与 evo 提示条目双写)
+      difficulty: (opts.difficulty) || 'normal', // P3b: AI 难度档(easy/normal/hard; 决策与延迟采样统一入口; 未知值由 difficulty.get 回落 normal)
     };
     // g.pending 兼容别名: 读=第一个未决提示(插入序); 写=遗留语义(清空全部提示, 非null则注册一条新提示)
     Object.defineProperty(g, 'pending', {
@@ -432,7 +456,17 @@
         if (g.isHuman(pid)) {
           g.evoWait = { pid, keys: evoKeys }; // 兼容字段(测试直接读写)
           setPrompt(g, { type: 'evo', pid, keys: evoKeys.slice() }); // P2: UI回调 prompt 化(双写, 互不影响)
-        } else { for (const k of evoKeys) { if (tryEvolve(g, pid, k)) break; } }
+        } else {
+          // P3b 接线#12: AI 择优进化 — 按进化净价值(进化牌基础价值-原牌基础价值)降序尝试;
+          // 无 ai 模块时回落旧行为(按候选序取首个成功)
+          const sc = (NS.ai && NS.ai.scorer) || null;
+          const order = (sc && evoKeys.length > 1) ? evoKeys.slice().sort((a, b) => {
+            const eva = nsData.cards.EVO_MAP[a] ? sc.cardBaseValue(nsData.cards.EVO_MAP[a]) : 0;
+            const evb = nsData.cards.EVO_MAP[b] ? sc.cardBaseValue(nsData.cards.EVO_MAP[b]) : 0;
+            return (evb - sc.cardBaseValue(b)) - (eva - sc.cardBaseValue(a));
+          }) : evoKeys;
+          for (const k of order) { if (tryEvolve(g, pid, k)) break; }
+        }
       }
       p.damageDealt = 0;
     }
@@ -792,12 +826,34 @@
             return 'pending';
           }
           // 引擎侧AI转嫁: 新目标为人类则挂起同意询问(经 respondDodge 作答), 为AI则按引擎判定
-          const nt = others[Math.floor(g.rnd() * others.length)];
+          // P3b 接线#4(部分): 转嫁目标由新打分器择优(威胁分最高且能承受该伤害的目标);
+          // 触发条件沿用旧引擎"持有卖队友即尝试" — test-extra E33 块3/4 断言 AI 被攻者必转嫁,
+          // 与 p3a "仅濒死/低血才转嫁" 的 chooseResponse(betrayAvail) 语义冲突(详见 P3b 报告 §冲突记录)。
+          let nt = null;
+          const sc = (aiHeu() && NS.ai && NS.ai.scorer) || null;
+          if (sc) {
+            let best = null, bestV = -Infinity;
+            for (const q of others) {
+              if (q.hp <= dmg) continue; // 转嫁后不致命的目标才考虑
+              const v = sc.attackPriority(g, target.id, q.id);
+              if (v > bestV) { bestV = v; best = q; }
+            }
+            if (best) nt = best;
+          }
+          if (!nt) nt = others[Math.floor(g.rnd() * others.length)];
           if (g.isHuman(nt.id)) {
             setPrompt(g, { type: 'dodge', pid: nt.id, attacker: attacker.id, target: nt.id, dmg, suit: opts.suit || 'spade', cardId: opts.cardId, isEvo: opts.isEvo, srcId: attacker.id, ctx: { betrayConsent: true, betrayer: target.id } });
             return 'pending';
           }
-          if (nsEngine.battle.aiBetrayConsent(g, nt, dmg)) {
+          // P3b 接线#4: AI 新目标的同意决策走 heuristics(存活 + 转嫁者是我方/内奸平衡才接);
+          // 无 ai 模块回落旧引擎判定(hp>dmg)。
+          let consent = nsEngine.battle.aiBetrayConsent(g, nt, dmg);
+          const heu = aiHeu();
+          if (heu) {
+            const d2 = heu.chooseResponse(g, nt.id, { type: 'dodge', pid: nt.id, attacker: attacker.id, target: nt.id, dmg, suit: opts.suit || 'spade', cardId: opts.cardId, isEvo: opts.isEvo, ctx: { betrayConsent: true, betrayer: target.id } }, { difficulty: g.difficulty });
+            if (d2 && d2.kind === 'respondDodge') consent = d2.yes === true;
+          }
+          if (consent) {
             const bi = target.hand.findIndex(c => c.key === 'funBetray');
             const bc = target.hand.splice(bi, 1)[0];
             g.discard.push(bc); g.usedBetray = true;
@@ -810,12 +866,37 @@
     }
     // WA 响应(含主公技护驾: 任意玩家可代主公出WA)
     if (evt !== 'spade' && !opts.noDodge) {
+      // P3b 接线#3: AI 出闪/护驾决策走 heuristics.chooseResponse('dodge')
+      // (阈值/溢出/EV 出闪; 主公自闪或选信念上最像忠臣的帮手护驾); 返回 null 时回落旧引擎行为。
+      const heu = aiHeu();
+      const aiDodge = (victim, helpers) => {
+        if (!heu) return null;
+        const pd = {
+          type: 'dodge', pid: victim.id, attacker: attacker.id, target: victim.id, dmg,
+          suit: opts.suit || 'spade', cardId: opts.cardId, isEvo: opts.isEvo,
+          helpers: helpers ? helpers.map(q => ({ id: q.id, name: q.name })) : undefined,
+        };
+        return heu.chooseResponse(g, victim.id, pd, { difficulty: g.difficulty });
+      };
       if (target.identity === 'lord') {
         const helpers = g.players.filter(q => !q.dead && q.id !== target.id && q.id !== attacker.id && nsEngine.battle.canDodge(g, q));
         if (g.isHuman(target.id)) {
           setPrompt(g, { type: 'dodge', pid: target.id, attacker: attacker.id, target: target.id, dmg, suit: opts.suit || 'spade', cardId: opts.cardId, isEvo: opts.isEvo, helpers: helpers.map(q => ({ id: q.id, name: q.name })) });
           return 'pending';
         }
+        const d = aiDodge(target, helpers);
+        if (d && d.kind === 'respondDodge') {
+          if (d.yes && d.helperId !== undefined && d.helperId !== null) {
+            const h = g.players[d.helperId];
+            if (h && !h.dead && nsEngine.battle.canDodge(g, h)) {
+              g.log.push({ t: g.round, txt: `${h.name}【护驾】代${target.name}出WA!`, cls: 'act' });
+              return nsEngine.battle.helperDodge(g, h, attacker, target, dmg, opts);
+            }
+          }
+          if (d.yes) return nsEngine.battle.resolveDodge(g, target, true, dmg, opts.suit || 'spade', attacker);
+          return nsEngine.battle.resolveHit(g, attacker, target, dmg, opts);
+        }
+        // 旧引擎行为兜底(无 ai 模块): 有WA必出, 否则第一个帮手护驾
         if (nsEngine.battle.canDodge(g, target)) return nsEngine.battle.resolveDodge(g, target, true, dmg, opts.suit || 'spade', attacker);
         if (helpers.length) { const h = helpers[0]; g.log.push({ t: g.round, txt: `${h.name}【护驾】代${target.name}出WA!`, cls: 'act' }); return nsEngine.battle.helperDodge(g, h, attacker, target, dmg, opts); }
         return nsEngine.battle.resolveHit(g, attacker, target, dmg, opts);
@@ -826,7 +907,12 @@
           setPrompt(g, { type: 'dodge', pid: target.id, attacker: attacker.id, target: target.id, dmg, suit: opts.suit || 'spade', cardId: opts.cardId, isEvo: opts.isEvo });
           return 'pending';
         } else {
-          // AI/自动: 有WA则出
+          // P3b: AI 按 heuristics 决策是否出闪; 无 ai 模块回落旧行为(有WA则出)
+          const d = aiDodge(target, null);
+          if (d && d.kind === 'respondDodge') {
+            return d.yes ? nsEngine.battle.resolveDodge(g, target, true, dmg, opts.suit || 'spade', attacker)
+              : nsEngine.battle.resolveHit(g, attacker, target, dmg, opts);
+          }
           return nsEngine.battle.resolveDodge(g, target, true, dmg, opts.suit || 'spade', attacker);
         }
       }
@@ -1252,7 +1338,52 @@
   }
 
   /* ---------------- AI ---------------- */
-  function aiTurn(g, pid) {
+  /* P3b 接线#1: AI 单步决策(heuristics.chooseAction → applyAction)。
+   * 返回 true=已执行一个动作; false=回合结束(描述符 end / 非法动作兜底)。
+   * 供同步 aiTurn(测试直调)与 drive 异步步进(步间插入 gapDelay)共用, 决策序列完全一致。 */
+  function aiStep(g, pid) {
+    const heu = aiHeu();
+    if (!heu) return false;
+    const desc = heu.chooseAction(g, pid, { difficulty: g.difficulty });
+    if (!desc || desc.kind === 'end') return false;
+    /* P3b 接线适配: 祖安对线(双目标 argueResp)若指向人类, 引擎侧改写为仅指向 AI 目标 —
+     * 与旧 aiTurn "AI仅指向AI(人类目标的选择需UI挂起)" 的约定一致; 否则 AI 会向人类挂起
+     * argueResp 提示(test.js B 套件 harness 无该类型代答分支)。改写按威胁分降序取前2名 AI 目标。 */
+    if (desc.kind === 'play') {
+      const p = g.players[pid];
+      const c = p && p.hand[desc.cardIdx];
+      if (c && c.key === 'funArgue') {
+        const sc = (NS.ai && NS.ai.scorer) || null;
+        const aiFoes = g.players.filter(q => !q.dead && q.id !== pid && !g.isHuman(q.id));
+        if (sc) aiFoes.sort((a, b) => sc.attackPriority(g, pid, b.id) - sc.attackPriority(g, pid, a.id));
+        if (aiFoes.length >= 2) {
+          desc.targetId = aiFoes[0].id; desc.targetId2 = aiFoes[1].id;
+        } else {
+          return false; // 无可指向的AI目标对: 放弃本动作(与旧 aiTurn 无目标时退出行为一致)
+        }
+      }
+    }
+    const r = heu.applyAction(g, pid, desc);
+    if (!r || r.ok === false) {
+      // 防御: 非法描述符记日志并终止本轮(防同一非法动作反复尝试的死循环;
+      // 自测 S5/S8 已证当前条件下零非法, 此兜底仅防人类目标/多槽时序变化)
+      g.log.push({ t: g.round, txt: `[AI] 跳过非法动作 ${(desc && desc.kind) || '?'}${(r && r.why) ? '(' + r.why + ')' : ''}`, cls: '' });
+      return false;
+    }
+    return true;
+  }
+  /* AI 回合收尾: 择优弃牌(heuristics.discardChoice) → 兜底弃牌阶段 → 轮转 */
+  function aiFinish(g, pid) {
+    const heu = aiHeu();
+    if (heu) {
+      const idx = heu.discardChoice(g, pid, { difficulty: g.difficulty });
+      if (idx && idx.length) discardCards(g, pid, idx);
+    }
+    discardPhase(g, pid); // 兜底(超上限逐张弃; 正常已被 discardChoice 收至限内)
+    endTurn(g, pid);
+  }
+  /* 旧随机启发大循环(P3b 之前的实现): 保留为浏览器未加载 ai 模块时的回落路径 */
+  function aiTurnLegacy(g, pid) {
     const p = g.players[pid];
     if (p.dead || g.over) { endTurn(g, pid); return; }
     if (p.skipPlay) { // 停课集训: 只跳过行动阶段, 弃牌阶段照常(需求Q5)
@@ -1360,9 +1491,40 @@
     if (!g.over) { discardPhase(g, pid); endTurn(g, pid); }
   }
 
-  /* AI 攻击目标选择: 反贼优先集火主公(公开身份) */
+  /* AI 回合主入口(P3b 接线#1): 保持 100% 同步与签名不变(测试直调)。
+   * 循环体: chooseAction → applyAction(1:1 描述符); {kind:'end'} 或非法动作 → 收尾;
+   * 攻击人类目标挂起提示 → 立即退出(与 p2a 契约一致), 由 drive 交 onPrompt。 */
+  function aiTurn(g, pid) {
+    const p = g.players[pid];
+    if (p.dead || g.over) { endTurn(g, pid); return; }
+    if (p.skipPlay) { // 停课集训: 只跳过行动阶段, 弃牌阶段照常(需求Q5)
+      if (!g.over) aiFinish(g, pid);
+      return;
+    }
+    if (!aiHeu()) { aiTurnLegacy(g, pid); return; } // 浏览器未加载 ai 模块: 回落旧启发
+    let guard = 0;
+    while (guard++ < 60 && !g.over && !hasBlockingPrompt(g)) {
+      if (!aiStep(g, pid)) break;
+    }
+    if (!g.over) aiFinish(g, pid);
+  }
+
+  /* AI 攻击目标选择(兼容死代码): aiTurn 已改走 heuristics.chooseAction; 此函数保留供
+   * 旧调用方(aiTurnLegacy), 转发到新打分器(威胁分 + 身份策略加成), 无 ai 模块时回落旧启发。 */
   function pickTarget(g, pid, enemies) {
     const p = g.players[pid];
+    const sc = (aiHeu() && NS.ai && NS.ai.scorer) || null;
+    const pol = (NS.ai && NS.ai.identityPolicy) || null;
+    if (sc) {
+      let best = null, bestV = -Infinity;
+      for (const q of enemies) {
+        if (!q || q.dead || q.id === pid) continue;
+        let v = sc.attackPriority(g, pid, q.id);
+        if (pol) v += pol.targetPreference(g, pid, q.id) * 0.8;
+        if (v > bestV) { bestV = v; best = q; }
+      }
+      if (best) return best.id;
+    }
     if (p.identity === 'rebel') {
       const lord = g.players.find(q => q.identity === 'lord' && !q.dead);
       if (lord) return lord.id;
@@ -1445,12 +1607,16 @@
 
   /* ---------------- 多人调度(P2 新增) ---------------- */
   /* 异步调度器 drive(g, {thinkMs, difficulty, onState, onPrompt, onEvent}):
-   * - AI 回合: 判定/摸牌后按 think 延迟执行既有 aiTurn(逻辑不改, P3 才重写AI), 每次步进后继续循环;
+   * - AI 回合: 判定/摸牌后按 think 延迟执行 aiTurn 等价逻辑(P3b: 改为与 aiTurn 共用
+   *   aiStep 逐动作步进, 步间插入 gapDelay/hesitateDelay 人形间隔), 每次步进后继续循环;
    * - 人类提示挂起: 调 onPrompt(g, prompt) 后返回 {status:'prompt', promptId, pid, type},
    *   由外部调 respondX(带 promptId)后再次调用 drive 恢复;
    * - 人类回合: 代跑判定/摸牌(确定性)后返回 {status:'human-turn', pid},
    *   由外部经 playCard/discardCards/discardPhase/endTurn 驱动后再调 drive;
-   * - 对局结束返回 {status:'over', winner}。默认 think 延迟 0(测试无等待); difficulty 给 800~2500ms 人形延迟。 */
+   * - 对局结束返回 {status:'over', winner}。
+   * P3b 接线#2: 思考延迟统一走难度表(P3a difficulty.js)采样 — thinkDelay 回合思考、
+   * gapDelay 同回合动作间隔、hesitateDelay 偶发犹豫; 难度取 opts.difficulty || g.difficulty
+   * (缺省 normal)。opts.thinkMs 显式值(含 0)时关闭全部人形延迟(测试无等待, 与 p2a 契约一致)。 */
   async function drive(g, opts) {
     opts = opts || {};
     let evCursor = (g._evCursor || 0);
@@ -1462,14 +1628,21 @@
         try { opts.onEvent({ kind: 'log', t: l.t, txt: l.txt, cls: l.cls }); } catch (e) { /* 回调异常不中断引擎 */ }
       }
     };
+    const difMod = aiDif(); // 可能为 null(浏览器未加载 ai 模块)
+    const useDiffDelays = (opts.thinkMs === undefined || opts.thinkMs === null) && !!difMod;
+    const diffTbl = difMod ? difMod.get(opts.difficulty || g.difficulty) : null;
+    const sleep = (ms) => (ms > 0) ? new Promise(res => setTimeout(res, ms)) : Promise.resolve();
     const think = async () => {
       let ms = 0;
       if (opts.thinkMs !== undefined && opts.thinkMs !== null) ms = Math.max(0, opts.thinkMs);
-      else if (opts.difficulty) {
-        const band = opts.difficulty === 'hard' ? 700 : 1700; // easy/normal 800~2500, hard 800~1500
-        ms = 800 + Math.floor(g.rnd() * band);
-      }
-      if (ms > 0) await new Promise(res => setTimeout(res, ms));
+      else if (useDiffDelays) ms = difMod.thinkDelay(diffTbl, g.rnd);
+      await sleep(ms);
+    };
+    const gapPause = async () => {
+      if (!useDiffDelays) return;
+      const h = difMod.hesitateDelay(diffTbl, g.rnd); // 偶发犹豫
+      if (h > 0) await sleep(h);
+      await sleep(difMod.gapDelay(diffTbl, g.rnd));
     };
     for (let guard = 0; guard < 100000 && !g.over; guard++) {
       emitEvents();
@@ -1488,11 +1661,22 @@
         if (g.over) break;
         return { status: 'human-turn', pid };
       }
-      judgePhase(g, pid); drawPhase(g, pid); // AI 回合(死亡者自动轮转由 aiTurn 处理)
+      judgePhase(g, pid); drawPhase(g, pid); // AI 回合(死亡者自动轮转由收尾处理)
       emitEvents();
       if (g.over) break;
       await think();
-      aiTurn(g, pid); // aiTurn 内部若挂起人类提示, 下一轮循环顶部交 onPrompt
+      if (p.dead || p.skipPlay) {
+        if (!g.over) aiFinish(g, pid);
+      } else if (!aiHeu()) {
+        aiTurnLegacy(g, pid); // 浏览器未加载 ai 模块: 旧启发(无步间延迟)
+      } else {
+        let stepGuard = 0;
+        while (stepGuard++ < 60 && !g.over && !hasBlockingPrompt(g)) {
+          if (!aiStep(g, pid)) break;
+          await gapPause();
+        }
+        if (!g.over) aiFinish(g, pid); // 内部若挂起人类提示, 下一轮循环顶部交 onPrompt
+      }
     }
     emitEvents();
     return { status: g.over ? 'over' : 'cap', winner: g.winner, over: g.over };
@@ -1543,6 +1727,8 @@
     makeRng, buildDeck, cardName, discardCard, discardFromHand, domOf, spend, gainMp,
     judgeCard, end, settleAchievements, queueEvo, checkAwaken, forceEndByCount,
     canPlay, pendingView, promptView, pickTarget,
+    // P3b: AI 步进/收尾/旧启发回落(drive 与 aiTurn 共用; 不进 58 键聚合导出)
+    aiStep, aiFinish, aiTurnLegacy, aiHeu, aiDif,
     onBecomeTarget, unequipArmor, unitDie, aoeOrder,
     // P2 提示层工具
     setPrompt, takePrompt, firstPrompt, lastPrompt, hasBlockingPrompt, findPrompt,

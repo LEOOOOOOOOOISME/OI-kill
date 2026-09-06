@@ -17,6 +17,28 @@
   const nsEngine = NS.engine = NS.engine || {};
   const me = nsEngine.battle = nsEngine.battle || {};
 
+  /* ---------------- P3b: AI 决策模块引用 ---------------- */
+  /* 延迟加载避免模块加载环(heuristics→battle→heuristics); 浏览器无 ai 脚本时回落
+   * 命名空间, 皆无则返回 null(调用点回落旧引擎行为)。 */
+  let _heu = null;
+  function aiHeu() {
+    if (_heu) return _heu;
+    if (typeof module !== 'undefined' && module.exports) {
+      try { _heu = require('../ai/heuristics.js'); } catch (e) { _heu = null; }
+    }
+    if (!_heu) _heu = (NS.ai && NS.ai.heuristics) || null;
+    return _heu;
+  }
+  /* 保留价值最低的手牌索引(弃"垃圾牌"用; 无 ai 模块回落 0) */
+  function aiJunkIdx(g, pid) {
+    const sc = (NS.ai && NS.ai.scorer) || null;
+    const p = g.players[pid];
+    if (!sc || !p || !p.hand.length) return 0;
+    let best = 0, bestV = Infinity;
+    p.hand.forEach((c, i) => { const v = sc.keepValue(g, pid, i); if (v < bestV) { bestV = v; best = i; } });
+    return best;
+  }
+
   /* ---------------- 伤害/濒死 ---------------- */
   function nearDeath(g, pid, src) {
     const p = g.players[pid];
@@ -149,6 +171,12 @@
         nsEngine.core.setPrompt(g, { type: 'chase', pid: attacker.id, attacker: attacker.id, target: target.id });
         return 'pending';
       }
+      // P3b 接线#6: AI 追刀决策走 heuristics(有攻击就追; 无 ai 模块回落旧行为=无条件追)
+      const heu = aiHeu();
+      if (heu) {
+        const d = heu.chooseResponse(g, attacker.id, { type: 'chase', pid: attacker.id, attacker: attacker.id, target: target.id }, { difficulty: g.difficulty });
+        if (!d || d.kind !== 'respondChase' || d.yes !== true) return 'dodged';
+      }
       const ai = attacker.hand.findIndex(c => nsData.cards.isAttackKey(c.key));
       const ac = attacker.hand.splice(ai, 1)[0];
       g.discard.push(ac);
@@ -163,7 +191,13 @@
         nsEngine.core.setPrompt(g, { type: 'bbst', pid: attacker.id, attacker: attacker.id, target: target.id, dmg: dmg });
         return 'pending';
       }
-      nsEngine.core.discardFromHand(g, attacker, 0);
+      // P3b 接线#6: AI 平衡树决策走 heuristics(有垃圾牌才弃1强制命中); 无 ai 模块回落旧行为(无条件弃)
+      const heu = aiHeu();
+      if (heu) {
+        const d = heu.chooseResponse(g, attacker.id, { type: 'bbst', pid: attacker.id, attacker: attacker.id, target: target.id, dmg: dmg }, { difficulty: g.difficulty });
+        if (!d || d.kind !== 'respondBbst' || d.yes !== true) return 'dodged'; // 不值得弃牌, 攻击被抵消
+      }
+      nsEngine.core.discardFromHand(g, attacker, aiJunkIdx(g, attacker.id));
       g.log.push({ t: g.round, txt: `${attacker.name}【平衡树】弃1强制命中!`, cls: 'act' });
       return resolveHit(g, attacker, target, dmg, {}, false);
     }
@@ -213,9 +247,19 @@
           nsEngine.core.setPrompt(g, { type: 'cold', pid: attacker.id, attacker: attacker.id, target: target.id, dmg, opts: JSON.parse(JSON.stringify(opts)) });
           return 'pending';
         }
-        return resolveHit(g, attacker, target, dmg, opts, true); // AI 自动改为弃牌
+        // P3b 接线#5: AI 冷数据决策走 heuristics(目标血厚/护盾未消耗才改拆牌);
+        // 无 ai 模块回落旧引擎行为(AI 自动改弃牌)
+        const heu = aiHeu();
+        if (heu) {
+          const d = heu.chooseResponse(g, attacker.id, { type: 'cold', pid: attacker.id, attacker: attacker.id, target: target.id, dmg }, { difficulty: g.difficulty });
+          if (d && d.kind === 'respondCold' && d.yes === true) return resolveHit(g, attacker, target, dmg, opts, true);
+          cold = false; // AI 决定照常命中
+        } else {
+          return resolveHit(g, attacker, target, dmg, opts, true); // AI 自动改为弃牌
+        }
+      } else {
+        cold = false;
       }
-      cold = false;
     }
     if (cold) {
       nsEngine.core.discardFromHand(g, target, 0); nsEngine.core.discardFromHand(g, target, 0);
@@ -331,7 +375,11 @@
     return { ok: false, why: '挡刀由引擎自动裁决,无挂起询问' };
   }
 
-  /* 卖队友转嫁同意(引擎侧AI决策): 新目标受到该伤害后仍存活则同意,否则拒绝 */
+  /* 卖队友转嫁同意(引擎侧AI决策): 新目标受到该伤害后仍存活则同意,否则拒绝。
+   * P3b 说明: 此函数服务于"人类被攻击者经 respondBetray 主动转嫁给 AI 新目标"路径,
+   * 保留旧判定(hp>dmg) — test-extra E33 块1 断言该路径下 AI 新目标 hp>伤害必同意,
+   * 与 p3a chooseResponse(betrayConsent) 的"存活+对方是我方才接"设计冲突(详见 P3b 报告 §冲突记录)。
+   * 全 AI 局内(attackPlayer 内联路径)的同意决策已改走 heuristics(见 core.js attackPlayer)。 */
   function aiBetrayConsent(g, nt, dmg) {
     if (nt.dead) return false;
     return nt.hp > dmg;

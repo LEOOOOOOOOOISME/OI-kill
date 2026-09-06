@@ -19,6 +19,19 @@
   const nsEngine = NS.engine = NS.engine || {};
   const me = nsEngine.tricks = nsEngine.tricks || {};
 
+  /* ---------------- P3b: AI 决策模块引用 ---------------- */
+  /* 延迟加载避免模块加载环(heuristics→tricks→heuristics); 浏览器无 ai 脚本时回落
+   * 命名空间, 皆无则返回 null(调用点回落旧引擎行为)。 */
+  let _heu = null;
+  function aiHeu() {
+    if (_heu) return _heu;
+    if (typeof module !== 'undefined' && module.exports) {
+      try { _heu = require('../ai/heuristics.js'); } catch (e) { _heu = null; }
+    }
+    if (!_heu) _heu = (NS.ai && NS.ai.heuristics) || null;
+    return _heu;
+  }
+
   /* ---------------- 特判(反制) ---------------- */
   // 可被特判抵消的锦囊(9.2: 抵消一张正在结算的锦囊对一名角色的效果; 延时锦囊/装备/技能不可抵消)
   const COUNTERABLE = ['duel', 'duelEvo', 'dismantle', 'draw2', 'steal', 'skipPlay', 'o2', 'pierce', 'cheat', 'recover', 'gift',
@@ -37,6 +50,13 @@
       if (g.isHuman(q.id)) {
         nsEngine.core.setPrompt(g, { type: 'counter', pid: q.id, victim: q.id, srcId, trickKey, ctx: { type: 'counterChain', trickKey, srcId, depth, cont } });
         return 'pending';
+      }
+      // P3b 接线#7: AI 连锁反制决策走 heuristics(有害锦囊+保留清单+链层奇偶语义);
+      // 放弃则按座次序询问下家(与人类连锁语义一致); 无 ai 模块回落旧行为(无条件反制)
+      const heu = aiHeu();
+      if (heu) {
+        const d = heu.chooseResponse(g, q.id, { type: 'counter', pid: q.id, victim: q.id, srcId, trickKey, ctx: { type: 'counterChain', trickKey, srcId, depth, cont } }, { difficulty: g.difficulty });
+        if (!d || d.kind !== 'respondCounter' || d.yes !== true) continue; // 放弃连锁
       }
       const c = q.hand.splice(idx, 1)[0];
       g.discard.push(c); q.mp -= 1;
@@ -59,6 +79,11 @@
       nsEngine.core.setPrompt(g, { type: 'counter', pid: victimId, victim: victimId, srcId, trickKey });
       return 'pending';
     }
+    /* P3b 接线#7 冲突记录: 受害者特判决策保留旧引擎行为(持特判必反制)。
+     * p3a chooseResponse('counter') 对"有害但不在 saveCounterFor 清单"的锦囊走概率分支
+     * (normal 档约 63.5%), 会使 AI 受害者随机放弃反制 —— test-extra E25(祖安对线特判段)
+     * 断言 AI 受害者必反制自身段, 与该概率语义冲突。为保 E 套件全绿, 此单点保留旧判定;
+     * 连锁反制(counterChain)与第三方反制(tryCounterOther)仍走 heuristics 的链层奇偶语义。 */
     const c = p.hand.splice(idx, 1)[0];
     g.discard.push(c); p.mp -= 1;
     g.log.push({ t: g.round, txt: `${p.name} 使用【${nsEngine.core.spec(c.key).name}】抵消了${nsEngine.core.spec(trickKey).name}的效果!`, cls: 'act' });
@@ -80,6 +105,13 @@
       if (g.isHuman(q.id)) {
         nsEngine.core.setPrompt(g, { type: 'counter', pid: q.id, victim: q.id, srcId: casterId, trickKey, ctx: { type: 'counterChain', trickKey, srcId: casterId, depth: 0, cont } });
         return 'pending';
+      }
+      // P3b 接线#7: AI 其他玩家反制决策走 heuristics(链层奇偶语义: 自益锦囊默认不反制,
+      // 题解大会只反制敌意选牌者); 放弃则按座次序询问下家; 无 ai 模块回落旧行为(无条件反制)
+      const heu = aiHeu();
+      if (heu) {
+        const d = heu.chooseResponse(g, q.id, { type: 'counter', pid: q.id, victim: q.id, srcId: casterId, trickKey, ctx: { type: 'counterChain', trickKey, srcId: casterId, depth: 0, cont } }, { difficulty: g.difficulty });
+        if (!d || d.kind !== 'respondCounter' || d.yes !== true) continue; // 放弃反制
       }
       const c = q.hand.splice(idx, 1)[0];
       g.discard.push(c); q.mp -= 1;
@@ -343,7 +375,14 @@
           nsEngine.core.setPrompt(g, { type: 'report', pid: srcId, victim: srcId, ctx: { targetId, cards: t.hand.map(c => ({ key: c.key, id: c.id, name: nsEngine.core.spec(c.key).name })) } });
           return { ok: true, result: 'pending' };
         }
-        const idx = Math.floor(g.rnd() * t.hand.length);
+        // P3b 接线#11: AI 举报弃牌决策走 heuristics(弃目标价值最高的牌); 无 ai 模块回落随机
+        let idx = -1;
+        const heu = aiHeu();
+        if (heu) {
+          const d = heu.chooseResponse(g, srcId, { type: 'report', pid: srcId, victim: srcId, ctx: { targetId, cards: t.hand.map(c => ({ key: c.key, id: c.id, name: nsEngine.core.spec(c.key).name })) } }, { difficulty: g.difficulty });
+          if (d && d.kind === 'respondReport' && d.cardKey != null) idx = t.hand.findIndex(c => c.key === d.cardKey);
+        }
+        if (idx < 0) idx = Math.floor(g.rnd() * t.hand.length);
         const rc = t.hand.splice(idx, 1)[0]; g.discard.push(rc);
         g.log.push({ t: g.round, txt: `${p.name}【举报】弃置${t.name}一张手牌`, cls: 'act' });
         return { ok: true };
@@ -406,13 +445,28 @@
       return;
     }
     if (trickKey === 'aoeAtk' || trickKey === 'aoeAtkEvo') {
+      // P3b 接线#8: AI 受害者 AOE 响应决策走 heuristics(低血或攻击充足才交牌, 否则受击);
+      // 无 ai 模块回落旧行为(有攻击必响应)
+      let want = true;
+      const heu = aiHeu();
+      if (heu) {
+        const d = heu.chooseResponse(g, q.id, { type: 'aoeResp', pid: q.id, victim: q.id, srcId, trickKey, dmg: effDmg, ctx: aoeCtx }, { difficulty: g.difficulty });
+        if (d && d.kind === 'respondAoeResp') want = d.yes === true;
+      }
       const idx = q.hand.findIndex(x => nsData.cards.isAttackKey(x.key));
-      if (idx >= 0) { const ac = q.hand.splice(idx, 1)[0]; g.discard.push(ac); g.log.push({ t: g.round, txt: `${q.name} 打出攻击响应`, cls: '' }); }
+      if (idx >= 0 && want) { const ac = q.hand.splice(idx, 1)[0]; g.discard.push(ac); g.log.push({ t: g.round, txt: `${q.name} 打出攻击响应`, cls: '' }); }
       else { g.log.push({ t: g.round, txt: `${q.name} 无攻击,受到${effDmg}伤`, cls: 'bad' }); nsEngine.core.loseHp(g, pid, effDmg, p, 'aoe'); }
     } else {
       let dodged = false;
+      // P3b 接线#8: AI 受害者 AOE 出闪决策走 heuristics(低血/多WA/手牌溢出才出闪)
+      let want = true;
+      const heu = aiHeu();
+      if (heu) {
+        const d = heu.chooseResponse(g, q.id, { type: 'aoeResp', pid: q.id, victim: q.id, srcId, trickKey, dmg: effDmg, ctx: aoeCtx }, { difficulty: g.difficulty });
+        if (d && d.kind === 'respondAoeResp') want = d.yes === true;
+      }
       if (q.armor && q.armor.key === 'aXuan') { const jc = nsEngine.core.judgeCard(g); if (jc.suit === 'heart') dodged = true; }
-      if (!dodged) {
+      if (!dodged && want) {
         const idx = q.hand.findIndex(x => nsData.cards.isDodgeKey(x.key));
         if (idx >= 0 && q.mp >= 1) { const dc = q.hand.splice(idx, 1)[0]; g.discard.push(dc); q.mp -= 1; dodged = true; }
       }
@@ -502,8 +556,26 @@
       nsEngine.core.setPrompt(g, { type: 'argueResp', pid: tid, victim: tid, srcId, trickKey: 'funArgue', dmg: 1, ctx: { type: 'argue', srcId, trickKey: 'funArgue', targetId: tid, remaining: (rest || []).slice(), groupId } });
       return 'pending';
     }
-    if (q.hand.length && g.rnd() < 0.5) {
-      const idx = Math.floor(g.rnd() * q.hand.length);
+    // P3b 接线#9: AI 目标祖安对线决策走 heuristics(有垃圾牌且血厚才弃1, 否则受1伤);
+    // 弃牌取保留价值最低的那张; 无 ai 模块回落旧行为(50% 随机弃1)
+    const heu = aiHeu();
+    let decided = false, yes = false;
+    if (heu) {
+      const d = heu.chooseResponse(g, q.id, {
+        type: 'argueResp', pid: tid, victim: tid, srcId, trickKey: 'funArgue', dmg: 1,
+        ctx: { type: 'argue', srcId, trickKey: 'funArgue', targetId: tid, remaining: (rest || []).slice(), groupId },
+      }, { difficulty: g.difficulty });
+      if (d && d.kind === 'respondAoeResp') { decided = true; yes = d.yes === true; }
+    }
+    if (decided ? yes : (q.hand.length && g.rnd() < 0.5)) {
+      let idx;
+      if (decided) {
+        // 弃保留价值最低的牌(heuristics 已保证存在垃圾牌)
+        idx = 0; let bestV = Infinity;
+        q.hand.forEach((c, i) => { const v = NS.ai.scorer.keepValue(g, tid, i); if (v < bestV) { bestV = v; idx = i; } });
+      } else {
+        idx = Math.floor(g.rnd() * q.hand.length);
+      }
       const rc = q.hand.splice(idx, 1)[0];
       if (rc) g.discard.push(rc); // 防御: 幻影空洞不入弃牌堆
       g.log.push({ t: g.round, txt: `${q.name}【祖安对线】选择弃1张【${rc ? nsEngine.core.spec(rc.key).name : '?'}】`, cls: 'act' });
@@ -599,7 +671,18 @@
         precreateHarvest(g, ctx); // P2: 批量预建其余人类选牌者的提示(座次序)
         return;
       }
-      const got = ctx.cards.shift();
+      // P3b 接线#10: AI 选牌决策走 heuristics(按身份需求选; 反贼偏好攻击、主公方偏好WA等);
+      // 无 ai 模块或选牌失败回落取第一张
+      const heu = aiHeu();
+      let got = null;
+      if (heu) {
+        const d = heu.chooseResponse(g, pid, { type: 'harvest', pid, victim: pid, ctx }, { difficulty: g.difficulty });
+        if (d && d.kind === 'respondHarvest' && d.choiceKey != null) {
+          const i = ctx.cards.findIndex(c => c && c.key === d.choiceKey);
+          if (i >= 0) got = ctx.cards.splice(i, 1)[0];
+        }
+      }
+      if (!got) got = ctx.cards.shift();
       p.hand.push(got);
       g.log.push({ t: g.round, txt: `${p.name} 选走【${nsEngine.core.spec(got.key).name}】`, cls: '' });
       ctx.pos++;

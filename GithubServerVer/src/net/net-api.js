@@ -448,5 +448,11 @@
 
   const api = { ACTIONS, EVENTS, PENDING_TYPES, buildApi };
   if (typeof module !== 'undefined' && module.exports) module.exports = api;
-  else Object.assign(NS, api);
+  else {
+    // P6b 子槽挂载: 不扁平 Object.assign 到根(根命名空间会在 game.js 浏览器分支被重新赋值
+    // 为扁平引擎 api, 扁平键会被覆盖); 改挂 OIKill.net 子槽, 与 OIKill.data.* / OIKill.ui.* 并列。
+    // 接线注意: 本文件需在 game.js 之后加载(此时根已是定型 api 对象), 子槽才不会被覆盖。
+    const NET = NS.net = NS.net || {};
+    Object.assign(NET, api);
+  }
 })(typeof window !== 'undefined' ? window : globalThis);
